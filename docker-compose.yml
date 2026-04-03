@@ -1,0 +1,12 @@
+services:
+  pig-count-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pig-count-service
+    ports:
+      - "8866:8866"
+    environment:
+      PIG_MODEL_PATH: /app/model/pig_count.onnx
+      PIG_SERVICE_HOST: 0.0.0.0
+      PIG_SERVICE_PORT: 8866

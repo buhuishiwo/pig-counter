@@ -1,0 +1,1916 @@
+<template>
+  <div id="app" :class="{ 'has-result': hasResult }">
+    <div class="ambient-wrap" aria-hidden="true">
+      <div class="ambient-orb orb-1"></div>
+      <div class="ambient-orb orb-2"></div>
+      <div class="ambient-orb orb-3" :class="{ pulse: hasResult }"></div>
+      <div class="ambient-grid"></div>
+    </div>
+
+    <nav class="topbar">
+      <div class="topbar-inner">
+        <div class="topbar-brand">
+          <div class="brand-logo">
+            <span class="brand-emoji">🐷</span>
+            <div class="brand-glow"></div>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">智慧猪群识别系统</span>
+            <span class="brand-tag">AI</span>
+          </div>
+          <div class="brand-sep"></div>
+          <span class="brand-sub">v0.1</span>
+        </div>
+
+        <div class="service-pill" :class="serviceClass">
+          <div class="service-dot"></div>
+          <span>{{ serviceLabel }}</span>
+          <button class="service-recheck" @click="checkServiceHealth" :disabled="checkingService">↺</button>
+        </div>
+
+        <div class="topbar-actions">
+          <label class="btn-ghost" for="top-file-input">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            上传图片
+          </label>
+          <input id="top-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" style="display:none"
+            @change="onTopFileChange" />
+
+          <button class="btn-primary" :disabled="!hasImage || isAnalyzing" @click="runAnalysis" ref="analyzeBtn">
+            <span class="btn-primary-inner">
+              <span v-if="isAnalyzing" class="btn-spinner"></span>
+              <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              {{ isAnalyzing ? '识别中…' : '开始识别' }}
+            </span>
+            <div class="btn-shine"></div>
+          </button>
+
+          <button v-if="hasImage && !isAnalyzing" class="btn-ghost btn-clear" @click="clearImage">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="topbar-scan" v-if="isAnalyzing">
+        <div class="topbar-scan-fill" :style="{ width: uploadProgress + '%' }"></div>
+        <div class="topbar-scan-glow" :style="{ left: uploadProgress + '%' }"></div>
+      </div>
+    </nav>
+
+    <div class="page-wrap">
+      <div class="stat-row">
+        <div v-for="(card, i) in statCards" :key="i" class="stat-card glass-card"
+          :class="{ 'stat-card--active': card.active }" :style="{ '--delay': (i * 60) + 'ms' }"
+          @mouseenter="cardFloatIn($event)" @mouseleave="cardFloatOut($event)">
+          <div class="stat-card-shimmer"></div>
+          <div class="stat-icon-wrap"><span class="stat-icon">{{ card.icon }}</span></div>
+          <div class="stat-body">
+            <div class="stat-val">
+              <span v-if="card.value !== null" class="stat-num" :class="card.cls">{{ i === 0 ? animatedCount :
+                card.value }}</span>
+              <span v-else class="stat-num stat-empty">—</span>
+              <span v-if="card.unit" class="stat-unit">{{ card.unit }}</span>
+            </div>
+            <div class="stat-label">{{ card.label }}</div>
+          </div>
+          <div class="stat-card-border"></div>
+        </div>
+      </div>
+
+      <div class="image-row">
+        <div class="img-card glass-card" :class="{ floating: hasImage }" @mouseenter="cardFloatIn($event)"
+          @mouseleave="cardFloatOut($event)">
+          <div class="img-card-header">
+            <div class="img-card-header-left">
+              <span class="traffic-dot dot-yellow"></span>
+              <span class="img-card-title">原图</span>
+            </div>
+            <transition name="meta-slide">
+              <span class="img-card-chip" v-if="imageMeta">{{ imageMeta.name }}</span>
+            </transition>
+          </div>
+          <div class="img-card-body">
+            <div class="dropzone" :class="{ 'dropzone--filled': hasImage, 'dropzone--drag': isDragging }"
+              @dragover.prevent="isDragging = true" @dragleave="isDragging = false" @drop.prevent="onDrop"
+              @click="!hasImage && $refs.dropInput.click()">
+              <transition name="img-fade">
+                <img v-if="hasImage" :src="previewUrl" class="img-preview" alt="原图" key="img" />
+                <div v-else class="dropzone-placeholder" key="ph">
+                  <div class="dz-pig">🐷</div>
+                  <p class="dz-title">拖拽或点击上传猪群图片</p>
+                  <p class="dz-sub">JPG · PNG · WEBP · BMP &nbsp;·&nbsp; ≤ 10 MB</p>
+                  <div class="dz-border-anim"></div>
+                </div>
+              </transition>
+              <transition name="drag-fade">
+                <div v-if="isDragging" class="drag-overlay">
+                  <div class="drag-ring"></div>
+                  <span>松开以上传</span>
+                </div>
+              </transition>
+              <input ref="dropInput" type="file" accept="image/*" style="display:none" @change="onDropInputChange" />
+            </div>
+            <transition name="meta-slide">
+              <div class="img-meta-bar" v-if="imageMeta">
+                <span>{{ imageMeta.size }}</span>
+                <span class="meta-sep">·</span>
+                <span>{{ imageMeta.width }} × {{ imageMeta.height }} px</span>
+              </div>
+            </transition>
+          </div>
+        </div>
+
+        <div class="img-card glass-card result-img-card"
+          :class="{ 'result-img-card--ready': hasResult, floating: hasImage }" @mouseenter="cardFloatIn($event)"
+          @mouseleave="cardFloatOut($event)">
+          <div class="img-card-header">
+            <div class="img-card-header-left">
+              <span class="traffic-dot" :class="hasResult ? 'dot-green' : 'dot-gray'"></span>
+              <span class="img-card-title">标注结果</span>
+            </div>
+            <transition name="meta-slide">
+              <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ pigCount }} 头猪</span>
+            </transition>
+          </div>
+          <div class="img-card-body">
+            <div class="result-zone" :class="{ 'result-zone--active': hasResult }">
+              <div class="canvas-wrap" v-if="hasImage">
+                <img :src="previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
+                  @load="onResultImgLoad" />
+                <canvas ref="boxCanvas" class="box-canvas"></canvas>
+                <transition name="overlay-fade">
+                  <div class="result-overlay" v-if="!hasResult && !isAnalyzing">
+                    <div class="overlay-content">
+                      <div class="overlay-icon">✦</div>
+                      <span>点击「开始识别」分析图片</span>
+                    </div>
+                  </div>
+                </transition>
+                <transition name="overlay-fade">
+                  <div class="result-overlay result-overlay--scanning" v-if="isAnalyzing">
+                    <div class="scan-line"></div>
+                    <div class="scan-corners">
+                      <span class="sc sc-tl"></span>
+                      <span class="sc sc-tr"></span>
+                      <span class="sc sc-bl"></span>
+                      <span class="sc sc-br"></span>
+                    </div>
+                    <div class="scan-label">
+                      <div class="scan-spinner"></div>
+                      AI 扫描中…
+                    </div>
+                  </div>
+                </transition>
+              </div>
+              <div v-else class="dropzone-placeholder result-placeholder">
+                <div class="dz-pig" style="opacity:.7;font-size:36px">✦</div>
+                <p class="dz-title" style="opacity:.85;color:#000">识别结果将在此展示</p>
+              </div>
+            </div>
+            <transition name="meta-slide">
+              <div class="img-meta-bar" v-if="hasResult && inferenceTime">
+                <span>推理耗时 {{ inferenceTime }} ms</span>
+                <span class="meta-sep">·</span>
+                <span>置信度 <span :class="confClass">{{ confidencePct }}%</span></span>
+              </div>
+            </transition>
+          </div>
+        </div>
+      </div>
+
+      <transition name="section-rise">
+        <div class="glass-card detail-card" v-if="hasResult">
+          <div class="detail-header">
+            <div class="detail-title-wrap">
+              <div class="detail-pulse"></div>
+              <span class="detail-title">检测明细</span>
+            </div>
+            <div class="detail-pills">
+              <span class="detail-pill">共 {{ pigCount }} 头</span>
+              <span class="detail-pill" :class="confClass">置信度 {{ confidencePct }}%</span>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="det-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>类别</th>
+                  <th>置信度</th>
+                  <th>坐标</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(box, i) in result.boxes" :key="i" class="det-row"
+                  :class="{ 'det-row--hover': hoveredBox === i }" :style="{ '--row-delay': (i * 30) + 'ms' }"
+                  @mouseenter="onRowHover(i)" @mouseleave="hoveredBox = null">
+                  <td class="td-idx">{{ i + 1 }}</td>
+                  <td><span class="cls-pill">{{ box.class_name === 'pig' ? '猪' : box.class_name }}</span></td>
+                  <td>
+                    <div class="conf-cell">
+                      <div class="conf-track">
+                        <div class="conf-fill" :class="getConfClass(box.score)" :style="{ width: (box.score * 100) + '%' }">
+                        </div>
+                      </div>
+                      <span class="conf-val" :class="getConfClass(box.score)">{{ (box.score * 100).toFixed(1) }}%</span>
+                    </div>
+                  </td>
+                  <td class="td-coord">{{ formatCoord(box) }}</td>
+                  <td>
+                    <span class="status-chip" :class="box.score >= 0.7 ? 'chip-ok' : 'chip-warn'">{{ box.score >= 0.7 ?
+                      '有效' : '低置信' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </transition>
+
+      <LogPanel />
+
+      <footer class="footer">
+        <span class="footer-brand">PigVision AI</span>
+        <span class="footer-dot">·</span>
+        <span>智能数猪大模型</span>
+        <span class="footer-dot">·</span>
+        <span>© {{ year }}</span>
+      </footer>
+    </div>
+
+    <transition name="overlay-bloom">
+      <div class="modal-backdrop" v-if="isAnalyzing">
+        <div class="modal-glass">
+          <div class="modal-rings">
+            <div class="modal-ring r1"></div>
+            <div class="modal-ring r2"></div>
+            <div class="modal-ring r3"></div>
+          </div>
+          <div class="modal-pig">🐷</div>
+          <div class="modal-title">模型推理中</div>
+          <div class="modal-sub">正在智能统计猪只数量</div>
+          <div class="modal-prog-wrap">
+            <div class="modal-prog-track">
+              <div class="modal-prog-fill" :style="{ width: uploadProgress + '%' }"></div>
+              <div class="modal-prog-glow" :style="{ left: uploadProgress + '%' }"></div>
+            </div>
+            <span class="modal-pct">{{ uploadProgress }}%</span>
+          </div>
+        </div>
+      </div>
+    </transition>
+  </div>
+</template>
+
+<script>
+import LogPanel from '@/components/LogPanel.vue'
+import { validateImage, fileToDataURL, getImageDimensions, formatFileSize } from '@/utils/imageUtils'
+import { analyzeImage, checkHealth } from '@/api/pigModel'
+
+export default {
+  name: 'App',
+  components: { LogPanel },
+  data() {
+    return { checkingService: false, isDragging: false, hoveredBox: null, animatedCount: 0 }
+  },
+  computed: {
+    hasImage() { return this.$store.getters.hasImage },
+    hasResult() { return this.$store.getters.hasResult },
+    previewUrl() { return this.$store.state.previewUrl },
+    imageMeta() { return this.$store.state.imageMeta },
+    isAnalyzing() { return this.$store.state.isAnalyzing },
+    uploadProgress() { return this.$store.state.uploadProgress },
+    result() { return this.$store.state.result },
+    pigCount() { return this.$store.getters.pigCount },
+    confidencePct() { return this.$store.getters.confidencePct },
+    inferenceTime() { return this.$store.getters.inferenceTime },
+    year() { return new Date().getFullYear() },
+    confClass() {
+      const p = this.confidencePct
+      if (p >= 85) return 'conf-high'
+      if (p >= 65) return 'conf-mid'
+      return 'conf-low'
+    },
+    serviceClass() {
+      const s = this.$store.state.serviceOnline
+      if (s === null) return 'service-unknown'
+      return s ? 'service-online' : 'service-offline'
+    },
+    serviceLabel() {
+      if (this.checkingService) return '检测中…'
+      const s = this.$store.state.serviceOnline
+      if (s === null) return '状态未知'
+      return s ? '服务正常' : '离线 / Mock'
+    },
+    statCards() {
+      return [
+        { icon: '🐷', label: '预测数量', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
+        { icon: '⚡', label: '处理耗时', value: this.inferenceTime, unit: this.inferenceTime ? 'ms' : null, cls: '', active: !!this.inferenceTime },
+        { icon: '🎯', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: this.confClass, active: this.hasResult },
+        { icon: '📐', label: '图像尺寸', value: this.imageMeta ? this.imageMeta.width + '×' + this.imageMeta.height : null, unit: null, cls: 'stat-sm', active: !!this.imageMeta }
+      ]
+    }
+  },
+  watch: {
+    pigCount(val) { if (val === null) { this.animatedCount = 0; return } this.animateNumber(val) },
+    hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) }
+  },
+  created() { this.checkServiceHealth() },
+  mounted() { window.addEventListener('mousemove', this.onMouseMove) },
+  beforeDestroy() { window.removeEventListener('mousemove', this.onMouseMove) },
+  methods: {
+    onMouseMove(e) {
+      const mx = e.clientX / window.innerWidth - 0.5
+      const my = e.clientY / window.innerHeight - 0.5
+      const o1 = document.querySelector('.orb-1')
+      const o2 = document.querySelector('.orb-2')
+      if (o1) o1.style.transform = 'translate(' + (mx * 30) + 'px,' + (my * 30) + 'px)'
+      if (o2) o2.style.transform = 'translate(' + (-mx * 20) + 'px,' + (-my * 20) + 'px)'
+    },
+    cardFloatIn(e) {
+      const card = e.currentTarget
+      card._tiltFn = (ev) => {
+        const r = card.getBoundingClientRect()
+        const cx = (ev.clientX - r.left) / r.width - 0.5
+        const cy = (ev.clientY - r.top) / r.height - 0.5
+        card.style.transform = 'perspective(800px) rotateX(' + (-cy * 3) + 'deg) rotateY(' + (cx * 3) + 'deg) translateY(-2px)'
+      }
+      card.addEventListener('mousemove', card._tiltFn)
+    },
+    cardFloatOut(e) {
+      const card = e.currentTarget
+      if (card._tiltFn) card.removeEventListener('mousemove', card._tiltFn)
+      card.style.transform = ''
+    },
+    onTopFileChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
+    onDropInputChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
+    onDrop(e) { this.isDragging = false; const f = e.dataTransfer.files[0]; if (f) this.processFile(f) },
+    async processFile(file) {
+      const { valid, error } = validateImage(file)
+      if (!valid) { this.$store.commit('ADD_LOG', { msg: error, type: 'error' }); return }
+      const dataURL = await fileToDataURL(file)
+      const dim = await getImageDimensions(dataURL)
+      const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
+      this.$store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta })
+      this.$store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+    },
+    clearImage() {
+      this.$store.commit('CLEAR_IMAGE')
+      this.$store.commit('ADD_LOG', { msg: '已清除图片', type: 'info' })
+      this.clearCanvas()
+    },
+    async runAnalysis() {
+      if (!this.hasImage || this.isAnalyzing) return
+      const btn = this.$refs.analyzeBtn
+      if (btn) { btn.style.transform = 'scale(0.93)'; setTimeout(() => { btn.style.transform = '' }, 150) }
+      this.$store.commit('SET_ANALYZING', true)
+      this.$store.commit('SET_PROGRESS', 0)
+      this.$store.commit('ADD_LOG', { msg: '发送至数猪大模型…', type: 'info' })
+      try {
+        const result = await analyzeImage(this.$store.state.imageFile, p => this.$store.commit('SET_PROGRESS', p))
+        this.$store.commit('SET_RESULT', result)
+        this.$store.commit('SET_PROGRESS', 100)
+        this.$store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+        this.$store.commit('ADD_LOG', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
+      } catch (err) {
+        this.$store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' })
+      } finally { this.$store.commit('SET_ANALYZING', false) }
+    },
+    onResultImgLoad() { if (this.hasResult) this.drawBoxesAnimated() },
+    drawBoxesAnimated() {
+      const canvas = this.$refs.boxCanvas
+      const img = this.$refs.baseImg
+      if (!canvas || !img || !this.hasResult) return
+      const boxes = this.result && this.result.boxes ? this.result.boxes : []
+      canvas.width = img.clientWidth; canvas.height = img.clientHeight
+      const ctx = canvas.getContext('2d')
+      let prog = 0; const total = 60
+      const draw = () => {
+        prog++
+        const t = Math.min(prog / total, 1)
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        boxes.forEach((box, i) => {
+          const bd = i / boxes.length * 0.4
+          const lt = Math.max(0, Math.min(1, (t - bd) / 0.6))
+          if (lt <= 0) return
+          const c = this.resolveCoords(box, canvas)
+          const w = c.x2 - c.x1; const h = c.y2 - c.y1
+          const isH = this.hoveredBox === i
+          const col = isH ? 'rgba(255,149,0,' + lt + ')' : 'rgba(52,199,89,' + lt + ')'
+          ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = isH ? 2.5 : 1.8
+          ctx.shadowColor = col; ctx.shadowBlur = isH ? 10 : 5; ctx.globalAlpha = lt
+          ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
+          if (lt > 0.6) {
+            const la = (lt - 0.6) / 0.4
+            ctx.save(); ctx.globalAlpha = la
+            const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
+            ctx.font = 'bold 11px -apple-system,monospace'
+            const tw = ctx.measureText(label).width
+            ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
+            ctx.beginPath(); ctx.roundRect(c.x1, c.y1 - 22, tw + 12, 20, 4); ctx.fill()
+            ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, c.y1 - 7); ctx.restore()
+          }
+        })
+        if (prog < total) requestAnimationFrame(draw)
+      }
+      requestAnimationFrame(draw)
+    },
+    clearCanvas() { const c = this.$refs.boxCanvas; if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height) },
+    resolveCoords(box, canvas) {
+      const isN = box.x1 <= 1 && box.y1 <= 1
+      const sw = canvas.width; const sh = canvas.height
+      const mw = (this.imageMeta && this.imageMeta.width) || 1
+      const mh = (this.imageMeta && this.imageMeta.height) || 1
+      if (isN) return { x1: box.x1 * sw, y1: box.y1 * sh, x2: (box.x1 + box.x2) * sw, y2: (box.y1 + box.y2) * sh }
+      return { x1: box.x1 / mw * sw, y1: box.y1 / mh * sh, x2: box.x2 / mw * sw, y2: box.y2 / mh * sh }
+    },
+    onRowHover(i) { this.hoveredBox = i; this.$nextTick(() => this.drawBoxesAnimated()) },
+    animateNumber(target) {
+      const dur = 800; const start = Date.now()
+      const tick = () => {
+        const t = Math.min((Date.now() - start) / dur, 1)
+        this.animatedCount = Math.round(target * (1 - Math.pow(1 - t, 4)))
+        if (t < 1) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    },
+    getConfClass(score) { if (score >= 0.85) return 'conf-high'; if (score >= 0.65) return 'conf-mid'; return 'conf-low' },
+    formatCoord(box) {
+      const isN = box.x1 <= 1 && box.y1 <= 1
+      const w = (this.imageMeta && this.imageMeta.width) || 1
+      const h = (this.imageMeta && this.imageMeta.height) || 1
+      if (isN) return Math.round(box.x1 * w) + ', ' + Math.round(box.y1 * h) + ', ' + Math.round((box.x1 + box.x2) * w) + ', ' + Math.round((box.y1 + box.y2) * h)
+      return Math.round(box.x1) + ', ' + Math.round(box.y1) + ', ' + Math.round(box.x2) + ', ' + Math.round(box.y2)
+    },
+    async checkServiceHealth() {
+      this.checkingService = true
+      try {
+        const online = await checkHealth()
+        this.$store.commit('SET_SERVICE_STATUS', online)
+        this.$store.commit('ADD_LOG', { msg: online ? '服务在线' : '服务未响应（Mock 模式）', type: online ? 'success' : 'warn' })
+      } catch { this.$store.commit('SET_SERVICE_STATUS', false) }
+      finally { this.checkingService = false }
+    }
+  }
+}
+</script>
+
+<style>
+:root {
+  --bg: #f2f2f7;
+  --bg-2: #ffffff;
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.88);
+  --glass-shadow: 0 2px 20px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --glass-hover: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --text: #1c1c1e;
+  --text-2: #3a3a3c;
+  --text-3: #6e6e73;
+  --text-4: #aeaeb2;
+  --sep: rgba(60, 60, 67, 0.12);
+  --sep-opaque: #d1d1d6;
+  --blue: #007aff;
+  --green: #34c759;
+  --orange: #ff9500;
+  --red: #ff3b30;
+  --pig: #ff6b81;
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0
+}
+
+html {
+  font-size: 16px
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden
+}
+
+#app {
+  position: relative;
+  min-height: 100vh
+}
+
+.ambient-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  transition: transform 1.2s var(--ease-out)
+}
+
+.orb-1 {
+  width: 600px;
+  height: 600px;
+  top: -200px;
+  left: -100px;
+  background: radial-gradient(circle, rgba(255, 107, 129, 0.28) 0%, rgba(255, 149, 0, 0.12) 60%, transparent 100%)
+}
+
+.orb-2 {
+  width: 500px;
+  height: 500px;
+  bottom: -150px;
+  right: -100px;
+  background: radial-gradient(circle, rgba(0, 122, 255, 0.18) 0%, rgba(88, 86, 214, 0.10) 60%, transparent 100%)
+}
+
+.orb-3 {
+  width: 400px;
+  height: 400px;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(52, 199, 89, 0.14) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 1.5s ease
+}
+
+.orb-3.pulse {
+  opacity: 0.6;
+  animation: orbPulse 4s ease-in-out infinite
+}
+
+@keyframes orbPulse {
+
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1)
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.15)
+  }
+}
+
+.ambient-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.018) 1px, transparent 1px);
+  background-size: 48px 48px
+}
+
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--glass-shadow);
+  transition: box-shadow 0.35s var(--ease-out), transform 0.35s var(--ease-out);
+  position: relative;
+  overflow: hidden
+}
+
+.glass-card:hover {
+  box-shadow: var(--glass-hover)
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: rgba(242, 242, 247, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--sep)
+}
+
+.topbar-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 28px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 14px
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 4px
+}
+
+.brand-logo {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 9px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05)
+}
+
+.brand-emoji {
+  font-size: 19px;
+  line-height: 1
+}
+
+.brand-glow {
+  position: absolute;
+  inset: -4px;
+  border-radius: 13px;
+  background: radial-gradient(circle, rgba(255, 107, 129, 0.2) 0%, transparent 70%);
+  animation: brandGlow 3s ease-in-out infinite
+}
+
+@keyframes brandGlow {
+
+  0%,
+  100% {
+    opacity: 0.5
+  }
+
+  50% {
+    opacity: 1
+  }
+}
+
+.brand-text {
+  display: flex;
+  align-items: baseline;
+  gap: 3px
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text)
+}
+
+.brand-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--blue);
+  letter-spacing: 0.04em
+}
+
+.brand-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--sep-opaque);
+  margin: 0 4px
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: var(--text-3)
+}
+
+.service-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--sep);
+  background: rgba(255, 255, 255, 0.7);
+  transition: all 0.3s ease
+}
+
+.service-online {
+  border-color: rgba(52, 199, 89, 0.3);
+  background: rgba(52, 199, 89, 0.08)
+}
+
+.service-offline {
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(255, 59, 48, 0.06)
+}
+
+.service-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4)
+}
+
+.service-online .service-dot {
+  background: var(--green);
+  animation: dotPulse 2s infinite
+}
+
+.service-offline .service-dot {
+  background: var(--red)
+}
+
+@keyframes dotPulse {
+
+  0%,
+  100% {
+    opacity: 1
+  }
+
+  50% {
+    opacity: 0.4
+  }
+}
+
+.service-pill span {
+  color: var(--text-3)
+}
+
+.service-online span {
+  color: var(--green)
+}
+
+.service-offline span {
+  color: var(--red)
+}
+
+.service-recheck {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-4);
+  padding: 0 2px;
+  transition: transform 0.3s;
+  line-height: 1
+}
+
+.service-recheck:hover {
+  transform: rotate(180deg);
+  color: var(--blue)
+}
+
+.service-recheck:disabled {
+  opacity: 0.4;
+  cursor: not-allowed
+}
+
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.btn-ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--sep);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none
+}
+
+.btn-ghost:hover {
+  background: white;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  color: var(--text)
+}
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  padding: 7px 18px;
+  border-radius: var(--r-sm);
+  background: var(--blue);
+  color: white;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s var(--spring);
+  box-shadow: 0 2px 12px rgba(0, 122, 255, 0.35)
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0071f3;
+  box-shadow: 0 4px 20px rgba(0, 122, 255, 0.45);
+  transform: translateY(-1px)
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.96)
+}
+
+.btn-primary:disabled {
+  background: var(--sep-opaque);
+  color: var(--text-4);
+  box-shadow: none;
+  cursor: not-allowed
+}
+
+.btn-primary-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  z-index: 1
+}
+
+.btn-shine {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.5s ease
+}
+
+.btn-primary:hover .btn-shine {
+  left: 150%
+}
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite
+}
+
+.btn-clear {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px
+}
+
+.btn-clear:hover {
+  background: rgba(255, 59, 48, 0.08);
+  border-color: rgba(255, 59, 48, 0.2);
+  color: var(--red)
+}
+
+.topbar-scan {
+  height: 2px;
+  background: var(--sep);
+  position: relative;
+  overflow: visible
+}
+
+.topbar-scan-fill {
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.3s ease;
+  border-radius: 1px
+}
+
+.topbar-scan-glow {
+  position: absolute;
+  top: -3px;
+  width: 24px;
+  height: 8px;
+  background: radial-gradient(circle, var(--blue), transparent);
+  transform: translateX(-50%);
+  transition: left 0.3s ease;
+  filter: blur(3px)
+}
+
+.page-wrap {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 28px 80px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  animation: rowReveal 0.5s var(--ease-out) both
+}
+
+@media(max-width:900px) {
+  .stat-row {
+    grid-template-columns: repeat(2, 1fr)
+  }
+}
+
+@keyframes rowReveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px)
+  }
+
+  to {
+    opacity: 1;
+    transform: none
+  }
+}
+
+.stat-card {
+  padding: 20px 22px;
+  cursor: default;
+  animation: cardReveal 0.5s var(--ease-out) var(--delay, 0ms) both
+}
+
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97)
+  }
+
+  to {
+    opacity: 1;
+    transform: none
+  }
+}
+
+.stat-card-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s
+}
+
+.stat-card:hover .stat-card-shimmer {
+  opacity: 1
+}
+
+.stat-card-border {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1px solid transparent;
+  transition: border-color 0.3s
+}
+
+.stat-card--active .stat-card-border {
+  border-color: rgba(255, 107, 129, 0.22)
+}
+
+.stat-icon-wrap {
+  margin-bottom: 12px
+}
+
+.stat-icon {
+  font-size: 22px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.08))
+}
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px
+}
+
+.stat-val {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 42px
+}
+
+.stat-num {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+  line-height: 1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.4s ease
+}
+
+.stat-num.stat-empty {
+  color: var(--text-4);
+  font-size: 28px
+}
+
+.stat-num.stat-sm {
+  font-size: 21px;
+  letter-spacing: -0.5px
+}
+
+.stat-num.conf-high {
+  color: var(--green)
+}
+
+.stat-num.conf-mid {
+  color: var(--orange)
+}
+
+.stat-num.conf-low {
+  color: var(--red)
+}
+
+.stat-unit {
+  font-size: 14px;
+  color: var(--text-3);
+  font-weight: 500
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 500
+}
+
+.image-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px
+}
+
+@media(max-width:720px) {
+  .image-row {
+    grid-template-columns: 1fr
+  }
+}
+
+.img-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--sep)
+}
+
+.img-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.traffic-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0
+}
+
+.dot-yellow {
+  background: #ffbd44
+}
+
+.dot-green {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(52, 199, 89, 0.45)
+}
+
+.dot-gray {
+  background: var(--sep-opaque)
+}
+
+.img-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2)
+}
+
+.img-card-chip {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  padding: 3px 8px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.chip-green {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.25);
+  color: var(--green)
+}
+
+.img-card-body {
+  padding: 14px
+}
+
+.dropzone {
+  width: 100%;
+  aspect-ratio: 16/10;
+  border-radius: var(--r-md);
+  position: relative;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1.5px dashed var(--sep-opaque);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center
+}
+
+.dropzone:hover:not(.dropzone--filled) {
+  border-color: var(--blue);
+  background: rgba(0, 122, 255, 0.025)
+}
+
+.dropzone--drag {
+  border-color: var(--blue);
+  background: rgba(0, 122, 255, 0.04);
+  box-shadow: inset 0 0 0 2px rgba(0, 122, 255, 0.12)
+}
+
+.dropzone--filled {
+  border-style: solid;
+  border-color: var(--sep);
+  cursor: default
+}
+
+.img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block
+}
+
+.dropzone-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  position: relative
+}
+
+.dz-pig {
+  font-size: 44px;
+  animation: pigFloat 4s ease-in-out infinite
+}
+
+@keyframes pigFloat {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg)
+  }
+
+  50% {
+    transform: translateY(-8px) rotate(3deg)
+  }
+}
+
+.dz-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2)
+}
+
+.dz-sub {
+  font-size: 11px;
+  color: var(--text-4)
+}
+
+.dz-border-anim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1.5px dashed transparent;
+  background: linear-gradient(var(--bg), var(--bg)) padding-box, linear-gradient(135deg, var(--blue), var(--pig), var(--blue)) border-box;
+  opacity: 0;
+  transition: opacity 0.3s
+}
+
+.dropzone:hover:not(.dropzone--filled) .dz-border-anim {
+  opacity: 1
+}
+
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 122, 255, 0.07);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--blue)
+}
+
+.drag-ring {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid var(--blue);
+  opacity: 0.5;
+  animation: ringPulse 1s ease-in-out infinite
+}
+
+@keyframes ringPulse {
+
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.3
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8
+  }
+}
+
+.img-meta-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px 0;
+  font-size: 11px;
+  color: var(--text-4)
+}
+
+.meta-sep {
+  color: var(--sep-opaque)
+}
+
+.result-zone {
+  width: 100%;
+  aspect-ratio: 16/10;
+  border-radius: var(--r-md);
+  position: relative;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1.5px solid var(--sep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.4s ease
+}
+
+.result-zone--active {
+  border-color: rgba(52, 199, 89, 0.3)
+}
+
+.canvas-wrap {
+  width: 100%;
+  height: 100%;
+  position: relative
+}
+
+.canvas-wrap .img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain
+}
+
+.box-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none
+}
+
+.result-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(6px)
+}
+
+.result-overlay--scanning {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(2px)
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-3);
+  font-weight: 500
+}
+
+.overlay-icon {
+  font-size: 28px;
+  opacity: 0.25;
+  animation: iconBreath 3s ease-in-out infinite
+}
+
+@keyframes iconBreath {
+
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.95)
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(1.05)
+  }
+}
+
+.result-placeholder {
+  opacity: 0.35
+}
+
+.scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  box-shadow: 0 0 12px var(--green);
+  animation: scanLine 1.8s ease-in-out infinite
+}
+
+@keyframes scanLine {
+  0% {
+    top: 0%
+  }
+
+  100% {
+    top: 100%
+  }
+}
+
+.scan-corners {
+  position: absolute;
+  inset: 12px
+}
+
+.sc {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: var(--green);
+  border-style: solid
+}
+
+.sc-tl {
+  top: 0;
+  left: 0;
+  border-width: 2px 0 0 2px;
+  border-radius: 3px 0 0 0
+}
+
+.sc-tr {
+  top: 0;
+  right: 0;
+  border-width: 2px 2px 0 0;
+  border-radius: 0 3px 0 0
+}
+
+.sc-bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 2px 2px;
+  border-radius: 0 0 0 3px
+}
+
+.sc-br {
+  bottom: 0;
+  right: 0;
+  border-width: 0 2px 2px 0;
+  border-radius: 0 0 3px 0
+}
+
+.scan-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 8px rgba(52, 199, 89, 0.5)
+}
+
+.scan-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(52, 199, 89, 0.3);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg)
+  }
+}
+
+.detail-card {
+  overflow: hidden
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--sep);
+  flex-wrap: wrap;
+  gap: 8px
+}
+
+.detail-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px
+}
+
+.detail-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 5px rgba(52, 199, 89, 0.5);
+  animation: dotPulse 2s infinite
+}
+
+.detail-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2)
+}
+
+.detail-pills {
+  display: flex;
+  gap: 6px
+}
+
+.detail-pill {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sep);
+  border-radius: 20px;
+  padding: 3px 10px
+}
+
+.detail-pill.conf-high {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.2);
+  color: var(--green)
+}
+
+.detail-pill.conf-mid {
+  background: rgba(255, 149, 0, 0.1);
+  border-color: rgba(255, 149, 0, 0.2);
+  color: var(--orange)
+}
+
+.detail-pill.conf-low {
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.2);
+  color: var(--red)
+}
+
+.table-scroll {
+  overflow-x: auto
+}
+
+.det-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px
+}
+
+.det-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--sep);
+  background: rgba(0, 0, 0, 0.012)
+}
+
+.det-row {
+  transition: background 0.15s ease;
+  animation: rowAppear 0.4s var(--ease-out) var(--row-delay, 0ms) both
+}
+
+@keyframes rowAppear {
+  from {
+    opacity: 0;
+    transform: translateX(-8px)
+  }
+
+  to {
+    opacity: 1;
+    transform: none
+  }
+}
+
+.det-row td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04)
+}
+
+.det-row:last-child td {
+  border-bottom: none
+}
+
+.det-row--hover td {
+  background: rgba(0, 122, 255, 0.03)
+}
+
+.td-idx {
+  color: var(--text-4);
+  font-size: 12px;
+  font-weight: 600;
+  width: 40px;
+  font-variant-numeric: tabular-nums
+}
+
+.cls-pill {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(52, 199, 89, 0.1);
+  border: 1px solid rgba(52, 199, 89, 0.2);
+  color: var(--green);
+  border-radius: 6px;
+  padding: 2px 8px
+}
+
+.conf-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px
+}
+
+.conf-track {
+  width: 72px;
+  height: 4px;
+  background: var(--sep);
+  border-radius: 2px;
+  overflow: hidden
+}
+
+.conf-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s var(--ease-out)
+}
+
+.conf-fill.conf-high {
+  background: var(--green)
+}
+
+.conf-fill.conf-mid {
+  background: var(--orange)
+}
+
+.conf-fill.conf-low {
+  background: var(--red)
+}
+
+.conf-val {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums
+}
+
+.conf-high {
+  color: var(--green)
+}
+
+.conf-mid {
+  color: var(--orange)
+}
+
+.conf-low {
+  color: var(--red)
+}
+
+.td-coord {
+  font-size: 11px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  font-family: 'SF Mono', monospace
+}
+
+.status-chip {
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 2px 8px;
+  border: 1px solid
+}
+
+.chip-ok {
+  background: rgba(52, 199, 89, 0.08);
+  border-color: rgba(52, 199, 89, 0.2);
+  color: var(--green)
+}
+
+.chip-warn {
+  background: rgba(255, 149, 0, 0.08);
+  border-color: rgba(255, 149, 0, 0.2);
+  color: var(--orange)
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-4);
+  margin-top: 12px
+}
+
+.footer-brand {
+  font-weight: 600;
+  color: var(--text-3)
+}
+
+.footer-dot {
+  color: var(--sep-opaque)
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(242, 242, 247, 0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  display: flex;
+  align-items: center;
+  justify-content: center
+}
+
+.modal-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.10), 0 4px 16px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  padding: 44px 56px;
+  text-align: center;
+  min-width: 300px;
+  position: relative;
+  overflow: hidden
+}
+
+.modal-rings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none
+}
+
+.modal-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 122, 255, 0.1);
+  transform: translate(-50%, -50%);
+  animation: ringExpand 3s ease-out infinite
+}
+
+.r1 {
+  width: 100px;
+  height: 100px;
+  animation-delay: 0s
+}
+
+.r2 {
+  width: 200px;
+  height: 200px;
+  animation-delay: 0.6s
+}
+
+.r3 {
+  width: 320px;
+  height: 320px;
+  animation-delay: 1.2s
+}
+
+@keyframes ringExpand {
+  0% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.7)
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.3)
+  }
+}
+
+.modal-pig {
+  font-size: 48px;
+  position: relative;
+  z-index: 1;
+  animation: modalPig 1.5s ease-in-out infinite;
+  margin-bottom: 16px
+}
+
+@keyframes modalPig {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg)
+  }
+
+  50% {
+    transform: translateY(-6px) rotate(5deg)
+  }
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -0.5px
+}
+
+.modal-sub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: 24px
+}
+
+.modal-prog-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px
+}
+
+.modal-prog-track {
+  flex: 1;
+  height: 4px;
+  background: var(--sep);
+  border-radius: 2px;
+  overflow: visible;
+  position: relative
+}
+
+.modal-prog-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 2px;
+  transition: width 0.3s ease
+}
+
+.modal-prog-glow {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 12px;
+  background: radial-gradient(circle, var(--blue), transparent);
+  transform: translateX(-50%);
+  filter: blur(4px);
+  transition: left 0.3s ease
+}
+
+.modal-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums
+}
+
+.img-fade-enter-active,
+.img-fade-leave-active {
+  transition: opacity 0.3s ease
+}
+
+.img-fade-enter,
+.img-fade-leave-to {
+  opacity: 0
+}
+
+.meta-slide-enter-active {
+  transition: all 0.35s var(--ease-out)
+}
+
+.meta-slide-leave-active {
+  transition: all 0.2s ease
+}
+
+.meta-slide-enter {
+  opacity: 0;
+  transform: translateY(-6px)
+}
+
+.meta-slide-leave-to {
+  opacity: 0;
+  transform: translateY(4px)
+}
+
+.drag-fade-enter-active,
+.drag-fade-leave-active {
+  transition: opacity 0.2s ease
+}
+
+.drag-fade-enter,
+.drag-fade-leave-to {
+  opacity: 0
+}
+
+.overlay-fade-enter-active {
+  transition: opacity 0.4s ease
+}
+
+.overlay-fade-leave-active {
+  transition: opacity 0.25s ease
+}
+
+.overlay-fade-enter,
+.overlay-fade-leave-to {
+  opacity: 0
+}
+
+.section-rise-enter-active {
+  transition: all 0.5s var(--ease-out)
+}
+
+.section-rise-enter {
+  opacity: 0;
+  transform: translateY(20px)
+}
+
+.overlay-bloom-enter-active {
+  transition: all 0.4s var(--ease-out)
+}
+
+.overlay-bloom-leave-active {
+  transition: all 0.25s ease
+}
+
+.overlay-bloom-enter {
+  opacity: 0
+}
+
+.overlay-bloom-leave-to {
+  opacity: 0
+}
+</style>
