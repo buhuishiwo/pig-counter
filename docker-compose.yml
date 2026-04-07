@@ -1,12 +1,58 @@
+version: "3.9"
+
 services:
-  pig-count-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: pig-count-service
+  mysql:
+    image: mysql:8.0
+    container_name: pig-count-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=pig_counterMysql
+      - MYSQL_DATABASE=pig_counter
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql_init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - pig-count-network
+
+  backend:
+    build: .
+    container_name: pig-count-backend
     ports:
       - "8866:8866"
     environment:
-      PIG_MODEL_PATH: /app/model/pig_count.onnx
-      PIG_SERVICE_HOST: 0.0.0.0
-      PIG_SERVICE_PORT: 8866
+      - PIG_SERVICE_HOST=0.0.0.0
+      - PIG_SERVICE_PORT=8866
+      - PIG_MODEL_PATH=/app/model/pig_count.onnx
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=pig_counterMysql
+      - DB_NAME=pig_counter
+    depends_on:
+      - mysql
+    restart: unless-stopped
+    networks:
+      - pig-count-network
+
+  nginx:
+    image: nginx:latest
+    container_name: pig-count-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./dist:/usr/share/nginx/html   # Vue build 目录
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - pig-count-network
+
+networks:
+  pig-count-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

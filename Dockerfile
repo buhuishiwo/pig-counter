@@ -7,7 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     PIG_SERVICE_HOST=0.0.0.0 \
     PIG_SERVICE_PORT=8866 \
-    PIG_MODEL_PATH=/app/model/pig_count.onnx
+    PIG_MODEL_PATH=/app/model/pig_count.onnx \
+    DB_HOST=mysql \
+    DB_PORT=3306 \
+    DB_USER=root \
+    DB_PASSWORD=pig_counterMysql \
+    DB_NAME=pig_counter
 
 WORKDIR /app
 

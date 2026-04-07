@@ -4,16 +4,19 @@ import base64
 import os
 import threading
 import time
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import pymysql
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 SERVICE_DIR = Path(__file__).resolve().parent
@@ -22,8 +25,31 @@ DEFAULT_MODEL_PATH = SERVICE_DIR / "model" / "pig_count.onnx"
 DEFAULT_HOST = os.getenv("PIG_SERVICE_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.getenv("PIG_SERVICE_PORT", "8866"))
 
+# MySQL数据库配置
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", "3306")),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", "CXH&cw9999"),
+    "database": os.getenv("DB_NAME", "pig_counter"),
+    "charset": "utf8mb4",
+    "cursorclass": pymysql.cursors.DictCursor,
+}
+
 _MODEL_LOCK = threading.Lock()
 _MODEL_CACHE: dict[str, cv2.dnn.Net] = {}
+
+
+@contextmanager
+def get_db():
+    """数据库连接上下文管理器"""
+    conn = None
+    try:
+        conn = pymysql.connect(**DB_CONFIG)
+        yield conn
+    finally:
+        if conn:
+            conn.close()
 
 
 class DetectionBox(BaseModel):
@@ -76,6 +102,22 @@ def encode_image(image: np.ndarray) -> str:
     ok, buffer = cv2.imencode(".jpg", image)
     if not ok:
         raise ValueError("标注图编码失败")
+    encoded = base64.b64encode(buffer.tobytes()).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def create_thumbnail(image: np.ndarray, max_size: int = 320, quality: int = 60) -> str:
+    height, width = image.shape[:2]
+    scale = min(max_size / width, max_size / height)
+    if scale < 1:
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        thumbnail = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    else:
+        thumbnail = image
+    ok, buffer = cv2.imencode(".jpg", thumbnail, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    if not ok:
+        raise ValueError("缩略图编码失败")
     encoded = base64.b64encode(buffer.tobytes()).decode("utf-8")
     return f"data:image/jpeg;base64,{encoded}"
 
@@ -205,7 +247,7 @@ def predict_image(
     conf_threshold: float,
     iou_threshold: float,
     imgsz: int,
-) -> PredictResponse:
+) -> tuple[PredictResponse, np.ndarray]:
     started_at = time.perf_counter()
     image_height, image_width = image.shape[:2]
     processed, scale, pad_x, pad_y = letterbox(image, imgsz)
@@ -228,7 +270,7 @@ def predict_image(
     )
 
     annotated = draw_detections(image, detections)
-    return PredictResponse(
+    response = PredictResponse(
         success=True,
         model_path=str(model_path),
         image_width=image_width,
@@ -238,6 +280,7 @@ def predict_image(
         processing_time_ms=round((time.perf_counter() - started_at) * 1000, 2),
         annotated_image=encode_image(annotated),
     )
+    return response, annotated
 
 
 app = FastAPI(
@@ -246,15 +289,30 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# 添加中间件处理静态资源路由
+# @app.middleware("http")
+# async def static_files_middleware(request: Request, call_next):
+#     path = request.url.path
+#     # 处理静态资源请求
+#     if path.startswith("/css/") or path.startswith("/js/") or path.startswith("/icon/") or path == "/favicon.ico" or path == "/icon-32x32.png" or path == "/icon-48x48.png":
+#         # 重定向到 /static 路径
+#         return RedirectResponse(url="/static" + path)
+#     # 处理根路径
+#     elif path == "/":
+#         return FileResponse(STATIC_DIR / "index.html")
+#     # 其他请求正常处理
+#     response = await call_next(request)
+#     return response
+
+# app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
 @app.on_event("startup")
@@ -270,7 +328,7 @@ async def root() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health() -> dict[str, Any]:
     model_path = resolve_model_path()
     return {
@@ -296,9 +354,10 @@ async def config() -> dict[str, Any]:
 @app.post("/api/predict", response_model=PredictResponse)
 async def predict(
     file: UploadFile = File(...),
-    conf_threshold: float = 0.25,
-    iou_threshold: float = 0.45,
-    imgsz: int = 960,
+    farm_id: int | None = Form(default=None),
+    conf_threshold: float = Form(default=0.25),
+    iou_threshold: float = Form(default=0.45),
+    imgsz: int = Form(default=960),
 ) -> PredictResponse:
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="只支持图片文件")
@@ -314,19 +373,405 @@ async def predict(
     try:
         image_bytes = await file.read()
         image = decode_image(image_bytes)
-        return predict_image(
+        result, annotated_image = predict_image(
             image=image,
             model_path=model_path,
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             imgsz=imgsz,
         )
+        
+        await save_detection_record(
+            farm_id=farm_id,
+            image_name=file.filename or "unknown.jpg",
+            predicted_count=result.predicted_count,
+            processing_time_ms=result.processing_time_ms,
+            annotated_image=annotated_image
+        )
+        
+        return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"推理失败: {exc}") from exc
+
+
+async def save_detection_record(
+    farm_id: int | None,
+    image_name: str,
+    predicted_count: int,
+    processing_time_ms: float,
+    annotated_image: np.ndarray
+) -> None:
+    """保存识别记录到数据库（存储压缩缩略图）"""
+    try:
+        thumbnail_base64 = create_thumbnail(annotated_image, max_size=320, quality=60)
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO detection_records 
+                        (farm_id, image_name, predicted_count, processing_time_ms, annotated_image, created_at) 
+                        VALUES (%s, %s, %s, %s, %s, NOW())""",
+                    (farm_id, image_name, predicted_count, processing_time_ms, thumbnail_base64)
+                )
+                conn.commit()
+                print(f"识别记录保存成功: farm_id={farm_id}, count={predicted_count}")
+    except Exception as exc:
+        print(f"保存识别记录失败: {exc}")
+        import traceback
+        traceback.print_exc()
+
+
+# ============================================================
+# 猪场管理API
+# ============================================================
+
+class PigFarmCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="猪场名称")
+
+
+class PigFarmUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="猪场名称")
+
+
+class PigFarmResponse(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PigFarmListResponse(BaseModel):
+    success: bool
+    data: list[PigFarmResponse]
+
+
+class PigFarmDetailResponse(BaseModel):
+    success: bool
+    data: PigFarmResponse | None
+
+
+class PigFarmMessageResponse(BaseModel):
+    success: bool
+    message: str
+
+
+@app.get("/api/farms", response_model=PigFarmListResponse)
+async def get_farms() -> PigFarmListResponse:
+    """获取所有猪场列表"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id, name, created_at FROM pig_farms ORDER BY created_at DESC"
+                )
+                farms = cursor.fetchall()
+                return PigFarmListResponse(
+                    success=True,
+                    data=[
+                        PigFarmResponse(
+                            id=farm["id"],
+                            name=farm["name"],
+                            created_at=farm["created_at"],
+                        )
+                        for farm in farms
+                    ],
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取猪场列表失败: {exc}"
+        ) from exc
+
+
+@app.get("/api/farms/{farm_id}", response_model=PigFarmDetailResponse)
+async def get_farm(farm_id: int) -> PigFarmDetailResponse:
+    """获取单个猪场信息"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id, name, created_at FROM pig_farms WHERE id = %s",
+                    (farm_id,),
+                )
+                farm = cursor.fetchone()
+                if not farm:
+                    raise HTTPException(status_code=404, detail="猪场不存在")
+                return PigFarmDetailResponse(
+                    success=True,
+                    data=PigFarmResponse(
+                        id=farm["id"],
+                        name=farm["name"],
+                        created_at=farm["created_at"],
+                    ),
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取猪场信息失败: {exc}"
+        ) from exc
+
+
+@app.post("/api/farms", response_model=PigFarmDetailResponse)
+async def create_farm(farm: PigFarmCreate) -> PigFarmDetailResponse:
+    """创建新猪场"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 检查名称是否已存在
+                cursor.execute(
+                    "SELECT id FROM pig_farms WHERE name = %s", (farm.name,)
+                )
+                if cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="猪场名称已存在")
+
+                cursor.execute(
+                    "INSERT INTO pig_farms (name, created_at) VALUES (%s, NOW())",
+                    (farm.name,),
+                )
+                conn.commit()
+                farm_id = cursor.lastrowid
+
+                cursor.execute(
+                    "SELECT id, name, created_at FROM pig_farms WHERE id = %s",
+                    (farm_id,),
+                )
+                new_farm = cursor.fetchone()
+                return PigFarmDetailResponse(
+                    success=True,
+                    data=PigFarmResponse(
+                        id=new_farm["id"],
+                        name=new_farm["name"],
+                        created_at=new_farm["created_at"],
+                    ),
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"创建猪场失败: {exc}"
+        ) from exc
+
+
+@app.put("/api/farms/{farm_id}", response_model=PigFarmDetailResponse)
+async def update_farm(farm_id: int, farm: PigFarmUpdate) -> PigFarmDetailResponse:
+    """更新猪场信息"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 检查猪场是否存在
+                cursor.execute(
+                    "SELECT id FROM pig_farms WHERE id = %s", (farm_id,)
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=404, detail="猪场不存在")
+
+                # 检查新名称是否与其他猪场冲突
+                cursor.execute(
+                    "SELECT id FROM pig_farms WHERE name = %s AND id != %s",
+                    (farm.name, farm_id),
+                )
+                if cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="猪场名称已存在")
+
+                cursor.execute(
+                    "UPDATE pig_farms SET name = %s WHERE id = %s",
+                    (farm.name, farm_id),
+                )
+                conn.commit()
+
+                cursor.execute(
+                    "SELECT id, name, created_at FROM pig_farms WHERE id = %s",
+                    (farm_id,),
+                )
+                updated_farm = cursor.fetchone()
+                return PigFarmDetailResponse(
+                    success=True,
+                    data=PigFarmResponse(
+                        id=updated_farm["id"],
+                        name=updated_farm["name"],
+                        created_at=updated_farm["created_at"],
+                    ),
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"更新猪场失败: {exc}"
+        ) from exc
+
+
+@app.delete("/api/farms/{farm_id}", response_model=PigFarmMessageResponse)
+async def delete_farm(farm_id: int) -> PigFarmMessageResponse:
+    """删除猪场"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 检查猪场是否存在
+                cursor.execute(
+                    "SELECT id FROM pig_farms WHERE id = %s", (farm_id,)
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=404, detail="猪场不存在")
+
+                cursor.execute("DELETE FROM pig_farms WHERE id = %s", (farm_id,))
+                conn.commit()
+                return PigFarmMessageResponse(
+                    success=True, message="猪场删除成功"
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"删除猪场失败: {exc}"
+        ) from exc
+
+
+# ============================================================
+# 识别记录统计API
+# ============================================================
+
+class DetectionRecordResponse(BaseModel):
+    id: int
+    farm_id: int | None
+    farm_name: str | None
+    image_name: str
+    predicted_count: int
+    processing_time_ms: float
+    created_at: datetime
+
+
+class DetectionRecordListResponse(BaseModel):
+    success: bool
+    data: list[DetectionRecordResponse]
+    total: int
+
+
+class DetectionStatsResponse(BaseModel):
+    success: bool
+    data: dict[str, Any]
+
+
+@app.get("/api/detection-records", response_model=DetectionRecordListResponse)
+async def get_detection_records(
+    farm_id: int | None = None,
+    page: int = 1,
+    page_size: int = 20
+) -> DetectionRecordListResponse:
+    """获取识别记录列表"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 构建查询条件
+                where_clause = ""
+                params = []
+                if farm_id:
+                    where_clause = "WHERE dr.farm_id = %s"
+                    params.append(farm_id)
+                
+                # 查询总数
+                count_sql = f"SELECT COUNT(*) as total FROM detection_records dr {where_clause}"
+                cursor.execute(count_sql, params)
+                total = cursor.fetchone()["total"]
+                
+                # 查询记录
+                offset = (page - 1) * page_size
+                sql = f"""
+                    SELECT dr.id, dr.farm_id, pf.name as farm_name, dr.image_name,
+                           dr.predicted_count, dr.processing_time_ms, dr.created_at
+                    FROM detection_records dr
+                    LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    {where_clause}
+                    ORDER BY dr.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(sql, params + [page_size, offset])
+                records = cursor.fetchall()
+                
+                return DetectionRecordListResponse(
+                    success=True,
+                    data=[
+                        DetectionRecordResponse(
+                            id=r["id"],
+                            farm_id=r["farm_id"],
+                            farm_name=r["farm_name"],
+                            image_name=r["image_name"],
+                            predicted_count=r["predicted_count"],
+                            processing_time_ms=r["processing_time_ms"],
+                            created_at=r["created_at"]
+                        )
+                        for r in records
+                    ],
+                    total=total
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取识别记录失败: {exc}"
+        ) from exc
+
+
+@app.get("/api/detection-stats", response_model=DetectionStatsResponse)
+async def get_detection_stats(
+    farm_id: int | None = None
+) -> DetectionStatsResponse:
+    """获取识别统计信息"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 构建查询条件
+                where_clause = ""
+                params = []
+                if farm_id:
+                    where_clause = "WHERE farm_id = %s"
+                    params.append(farm_id)
+                
+                # 总识别图片数
+                cursor.execute(
+                    f"SELECT COUNT(*) as total_images FROM detection_records {where_clause}",
+                    params
+                )
+                total_images = cursor.fetchone()["total_images"]
+                
+                # 总识别猪数量
+                cursor.execute(
+                    f"SELECT COALESCE(SUM(predicted_count), 0) as total_pigs FROM detection_records {where_clause}",
+                    params
+                )
+                total_pigs = cursor.fetchone()["total_pigs"]
+                
+                # 今日识别数量
+                today_where = f"{where_clause} AND DATE(created_at) = CURDATE()" if where_clause else "WHERE DATE(created_at) = CURDATE()"
+                cursor.execute(
+                    f"SELECT COUNT(*) as today_images, COALESCE(SUM(predicted_count), 0) as today_pigs FROM detection_records {today_where}",
+                    params
+                )
+                today_stats = cursor.fetchone()
+                
+                # 平均处理时间
+                cursor.execute(
+                    f"SELECT AVG(processing_time_ms) as avg_time FROM detection_records {where_clause}",
+                    params
+                )
+                avg_time = cursor.fetchone()["avg_time"] or 0
+                
+                return DetectionStatsResponse(
+                    success=True,
+                    data={
+                        "total_images": total_images,
+                        "total_pigs": int(total_pigs),
+                        "today_images": today_stats["today_images"],
+                        "today_pigs": int(today_stats["today_pigs"]),
+                        "avg_processing_time_ms": round(avg_time, 2)
+                    }
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取统计数据失败: {exc}"
+        ) from exc
 
 
 if __name__ == "__main__":

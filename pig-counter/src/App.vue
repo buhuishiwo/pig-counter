@@ -11,7 +11,9 @@
       <div class="topbar-inner">
         <div class="topbar-brand">
           <div class="brand-logo">
-            <span class="brand-emoji">🐷</span>
+            <span class="brand-emoji">
+              <img src="/icon/icon-48x48.png" alt="智慧猪群识别系统" />
+            </span>
             <div class="brand-glow"></div>
           </div>
           <div class="brand-text">
@@ -28,6 +30,34 @@
           <button class="service-recheck" @click="checkServiceHealth" :disabled="checkingService">↺</button>
         </div>
 
+        <!-- 猪场选择器 -->
+        <div class="farm-selector">
+          <div class="farm-select-wrap" ref="farmSelectWrap" @click="toggleFarmDropdown">
+            <div class="farm-select" :class="{ 'farm-select--open': showFarmDropdown }">
+              <span class="farm-select-value">
+                {{ currentFarmName === '未选择' ? '请选择猪场' : currentFarmName }}
+              </span>
+              <span class="farm-select-arrow" :class="{ 'farm-select-arrow--open': showFarmDropdown }">▼</span>
+            </div>
+            <div class="farm-dropdown" v-if="showFarmDropdown">
+              <div class="farm-dropdown-item" :class="{ 'farm-dropdown-item--active': selectedFarmId === null }" @click.stop="selectFarm(null)">
+                <span class="farm-dropdown-item-icon">🏠</span>
+                <span class="farm-dropdown-item-text">请选择猪场</span>
+              </div>
+              <div class="farm-dropdown-item" v-for="farm in farms" :key="farm.id" :class="{ 'farm-dropdown-item--active': selectedFarmId === farm.id }" @click.stop="selectFarm(farm.id)">
+                <span class="farm-dropdown-item-icon">🏭</span>
+                <span class="farm-dropdown-item-text">{{ farm.name }}</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn-farm-manage" @click="showFarmModal = true" title="管理猪场">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
+        </div>
+
         <div class="topbar-actions">
           <label class="btn-ghost" for="top-file-input">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -40,7 +70,7 @@
           <input id="top-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" style="display:none"
             @change="onTopFileChange" />
 
-          <button class="btn-primary" :disabled="!hasImage || isAnalyzing" @click="runAnalysis" ref="analyzeBtn">
+          <button class="btn-primary" :disabled="!hasImage || !selectedFarmId || isAnalyzing || !$store.state.serviceOnline" @click="runAnalysis" ref="analyzeBtn" :title="getAnalyzeBtnTitle()">
             <span class="btn-primary-inner">
               <span v-if="isAnalyzing" class="btn-spinner"></span>
               <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -52,6 +82,8 @@
             </span>
             <div class="btn-shine"></div>
           </button>
+          <span v-if="!selectedFarmId && hasImage" class="btn-hint btn-hint--warning">⚠️ 请先选择猪场</span>
+          <span v-else-if="!$store.state.serviceOnline && hasImage" class="btn-hint btn-hint--error">⚠️ 服务离线，无法识别</span>
 
           <button v-if="hasImage && !isAnalyzing" class="btn-ghost btn-clear" @click="clearImage">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -68,6 +100,58 @@
     </nav>
 
     <div class="page-wrap">
+      <!-- 顶部信息行：猪场信息 + 系统统计 -->
+      <div class="top-info-row">
+        <!-- 当前猪场信息卡片 -->
+        <div class="current-farm-section">
+          <div class="farm-info-card glass-card" :class="{ 'farm-info-card--warning': !selectedFarmId }">
+            <div v-if="!selectedFarmId" class="farm-warning-banner">
+              <span class="farm-warning-icon">⚠️</span>
+              <span class="farm-warning-text">请先在上方选择猪场，才能进行图片识别</span>
+            </div>
+            <div class="farm-info-header">
+              <div class="farm-info-icon">🏭</div>
+              <div class="farm-info-title">
+                <span class="farm-info-label">当前猪场</span>
+                <span class="farm-info-name" :class="{ 'farm-info-name--placeholder': !selectedFarmId }">{{ currentFarmName }}</span>
+              </div>
+            </div>
+            <div class="farm-info-meta">
+              <span v-if="selectedFarmId" class="farm-info-id">ID: {{ selectedFarmId }}</span>
+              <span v-else class="farm-info-hint">未选择</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 系统统计信息卡片 -->
+        <div class="system-stats-section">
+          <div class="system-stats-card glass-card">
+            <div class="system-stats-header">
+              <span class="system-stats-icon">📊</span>
+              <span class="system-stats-title">系统统计</span>
+            </div>
+            <div class="system-stats-grid">
+              <div class="system-stat-item">
+                <span class="system-stat-value">{{ systemStats.total_images || 0 }}</span>
+                <span class="system-stat-label">识别图片总数</span>
+              </div>
+              <div class="system-stat-item">
+                <span class="system-stat-value">{{ systemStats.total_pigs || 0 }}</span>
+                <span class="system-stat-label">识别猪只总数</span>
+              </div>
+              <div class="system-stat-item">
+                <span class="system-stat-value">{{ systemStats.today_images || 0 }}</span>
+                <span class="system-stat-label">今日识别图片</span>
+              </div>
+              <div class="system-stat-item">
+                <span class="system-stat-value">{{ systemStats.today_pigs || 0 }}</span>
+                <span class="system-stat-label">今日识别猪只</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="stat-row">
         <div v-for="(card, i) in statCards" :key="i" class="stat-card glass-card"
           :class="{ 'stat-card--active': card.active }" :style="{ '--delay': (i * 60) + 'ms' }"
@@ -103,13 +187,13 @@
             <div class="dropzone" :class="{ 'dropzone--filled': hasImage, 'dropzone--drag': isDragging }"
               @dragover.prevent="isDragging = true" @dragleave="isDragging = false" @drop.prevent="onDrop"
               @click="!hasImage && $refs.dropInput.click()">
+              <div class="dz-border-anim"></div>
               <transition name="img-fade">
                 <img v-if="hasImage" :src="previewUrl" class="img-preview" alt="原图" key="img" />
                 <div v-else class="dropzone-placeholder" key="ph">
                   <div class="dz-pig">🐷</div>
                   <p class="dz-title">拖拽或点击上传猪群图片</p>
                   <p class="dz-sub">JPG · PNG · WEBP · BMP &nbsp;·&nbsp; ≤ 10 MB</p>
-                  <div class="dz-border-anim"></div>
                 </div>
               </transition>
               <transition name="drag-fade">
@@ -144,7 +228,7 @@
           </div>
           <div class="img-card-body">
             <div class="result-zone" :class="{ 'result-zone--active': hasResult }">
-              <div class="canvas-wrap" v-if="hasImage">
+              <div class="canvas-wrap" v-if="hasImage" @click="openImagePreview" :class="{ 'canvas-wrap--clickable': hasResult }">
                 <img :src="previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
                   @load="onResultImgLoad" />
                 <canvas ref="boxCanvas" class="box-canvas"></canvas>
@@ -241,31 +325,110 @@
       <LogPanel />
 
       <footer class="footer">
-        <span class="footer-brand">PigVision AI</span>
+        <span class="footer-brand">智慧猪群识别系统</span>
         <span class="footer-dot">·</span>
-        <span>智能数猪大模型</span>
+        <span>Powered By 智能数猪大模型</span>
         <span class="footer-dot">·</span>
         <span>© {{ year }}</span>
       </footer>
     </div>
 
-    <transition name="overlay-bloom">
-      <div class="modal-backdrop" v-if="isAnalyzing">
-        <div class="modal-glass">
-          <div class="modal-rings">
-            <div class="modal-ring r1"></div>
-            <div class="modal-ring r2"></div>
-            <div class="modal-ring r3"></div>
+    <!-- 顶部提示栏 -->
+    <transition name="toast-slide">
+      <div v-if="showToast" class="toast-bar" :class="toastType">
+        <div class="toast-content">
+          <div class="toast-icon">{{ toastIcon }}</div>
+          <div class="toast-message">{{ toastMessage }}</div>
+          <div v-if="showToastProgress" class="toast-progress">
+            <div class="toast-progress-fill" :style="{ width: toastProgress + '%' }"></div>
           </div>
-          <div class="modal-pig">🐷</div>
-          <div class="modal-title">模型推理中</div>
-          <div class="modal-sub">正在智能统计猪只数量</div>
-          <div class="modal-prog-wrap">
-            <div class="modal-prog-track">
-              <div class="modal-prog-fill" :style="{ width: uploadProgress + '%' }"></div>
-              <div class="modal-prog-glow" :style="{ left: uploadProgress + '%' }"></div>
+        </div>
+        <button v-if="toastType !== 'toast-info'" class="toast-close" @click="closeToast">×</button>
+      </div>
+    </transition>
+
+    <!-- 猪场管理弹窗 -->
+    <transition name="overlay-bloom">
+      <div class="modal-backdrop farm-modal" v-if="showFarmModal" @click.self="closeFarmModal">
+        <div class="modal-glass farm-modal-content">
+          <div class="farm-modal-header">
+            <h3>🏭 猪场管理</h3>
+            <button class="btn-close" @click="closeFarmModal">×</button>
+          </div>
+
+          <!-- 添加新猪场 -->
+          <div class="farm-add-section">
+            <input
+              v-model="newFarmName"
+              type="text"
+              class="farm-input"
+              placeholder="输入新猪场名称"
+              @keyup.enter="addFarm"
+              maxlength="100"
+            />
+            <button class="btn-add-farm" @click="addFarm" :disabled="!newFarmName.trim() || isAddingFarm">
+              <span v-if="isAddingFarm" class="btn-spinner-small"></span>
+              <span v-else>+ 添加</span>
+            </button>
+          </div>
+
+          <!-- 猪场列表 -->
+          <div class="farm-list">
+            <div v-if="farms.length === 0" class="farm-empty">
+              暂无猪场，请添加
             </div>
-            <span class="modal-pct">{{ uploadProgress }}%</span>
+            <div
+              v-for="farm in farms"
+              :key="farm.id"
+              class="farm-item"
+              :class="{ 'farm-item--editing': editingFarmId === farm.id }"
+            >
+              <template v-if="editingFarmId === farm.id">
+                <input
+                  v-model="editingFarmName"
+                  type="text"
+                  class="farm-input farm-input--edit"
+                  @keyup.enter="saveEditFarm"
+                  @keyup.esc="cancelEditFarm"
+                  ref="editInput"
+                  maxlength="100"
+                />
+                <div class="farm-actions">
+                  <button class="btn-farm-save" @click="saveEditFarm" title="保存">✓</button>
+                  <button class="btn-farm-cancel" @click="cancelEditFarm" title="取消">✕</button>
+                </div>
+              </template>
+              <template v-else>
+                <span class="farm-name">{{ farm.name }}</span>
+                <span class="farm-date">{{ formatFarmDate(farm.created_at) }}</span>
+                <div class="farm-actions">
+                  <button class="btn-farm-edit" @click="startEditFarm(farm)" title="编辑">✎</button>
+                  <button class="btn-farm-delete" @click="deleteFarmById(farm.id)" title="删除">🗑</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 图片预览模态框 -->
+    <transition name="modal-fade">
+      <div v-if="showImagePreview" class="image-preview-modal" @click="closeImagePreview">
+        <div class="preview-backdrop"></div>
+        <div class="preview-container" @click.stop>
+          <button class="preview-close" @click="closeImagePreview" title="关闭">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <div class="preview-content">
+            <img :src="annotatedImage" class="preview-image" alt="识别结果大图" />
+            <div class="preview-info">
+              <span class="preview-badge">检测到 {{ pigCount }} 头猪</span>
+              <span class="preview-badge">置信度 {{ confidencePct }}%</span>
+            </div>
           </div>
         </div>
       </div>
@@ -277,12 +440,45 @@
 import LogPanel from '@/components/LogPanel.vue'
 import { validateImage, fileToDataURL, getImageDimensions, formatFileSize } from '@/utils/imageUtils'
 import { analyzeImage, checkHealth } from '@/api/pigModel'
+import { getFarms, createFarm, updateFarm, deleteFarm } from '@/api/farmApi'
+import { getDetectionStats } from '@/api/detectionApi'
 
 export default {
   name: 'App',
   components: { LogPanel },
   data() {
-    return { checkingService: false, isDragging: false, hoveredBox: null, animatedCount: 0 }
+    return {
+      checkingService: false,
+      isDragging: false,
+      hoveredBox: null,
+      animatedCount: 0,
+      showImagePreview: false,
+      // 猪场相关数据
+      farms: [],
+      selectedFarmId: null,
+      showFarmModal: false,
+      newFarmName: '',
+      isAddingFarm: false,
+      editingFarmId: null,
+      editingFarmName: '',
+      // 系统统计数据
+      systemStats: {
+        total_images: 0,
+        total_pigs: 0,
+        today_images: 0,
+        today_pigs: 0,
+        avg_processing_time_ms: 0
+      },
+      // 自定义下拉状态
+      showFarmDropdown: false,
+      // 顶部提示栏
+      showToast: false,
+      toastMessage: '',
+      toastType: 'toast-info', // toast-info, toast-error, toast-success
+      toastIcon: 'ℹ️',
+      showToastProgress: false,
+      toastProgress: 0
+    }
   },
   computed: {
     hasImage() { return this.$store.getters.hasImage },
@@ -295,6 +491,7 @@ export default {
     pigCount() { return this.$store.getters.pigCount },
     confidencePct() { return this.$store.getters.confidencePct },
     inferenceTime() { return this.$store.getters.inferenceTime },
+    annotatedImage() { return this.$store.state.result?.annotatedImage || null },
     year() { return new Date().getFullYear() },
     confClass() {
       const p = this.confidencePct
@@ -313,6 +510,10 @@ export default {
       if (s === null) return '状态未知'
       return s ? '服务正常' : '离线 / Mock'
     },
+    currentFarmName() {
+      const farm = this.farms.find(f => f.id === this.selectedFarmId)
+      return farm ? farm.name : '未选择'
+    },
     statCards() {
       return [
         { icon: '🐷', label: '预测数量', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
@@ -327,9 +528,40 @@ export default {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) }
   },
   created() { this.checkServiceHealth() },
-  mounted() { window.addEventListener('mousemove', this.onMouseMove) },
-  beforeDestroy() { window.removeEventListener('mousemove', this.onMouseMove) },
+  mounted() { 
+    window.addEventListener('mousemove', this.onMouseMove)
+    window.addEventListener('keydown', this.onKeyDown)
+    document.addEventListener('click', this.handleClickOutside)
+  },
+  beforeDestroy() { 
+    window.removeEventListener('mousemove', this.onMouseMove)
+    window.removeEventListener('keydown', this.onKeyDown)
+    document.removeEventListener('click', this.handleClickOutside)
+  },
   methods: {
+    toggleFarmDropdown() {
+      this.showFarmDropdown = !this.showFarmDropdown
+    },
+    handleClickOutside(e) {
+      if (this.$refs.farmSelectWrap && !this.$refs.farmSelectWrap.contains(e.target)) {
+        this.showFarmDropdown = false
+      }
+    },
+    selectFarm(farmId) {
+      this.selectedFarmId = farmId
+      this.showFarmDropdown = false
+      this.onFarmChange()
+    },
+    onKeyDown(e) {
+      if (e.key === 'Escape' && this.showImagePreview) {
+        this.closeImagePreview()
+      }
+    },
+    getAnalyzeBtnTitle() {
+      if (!this.selectedFarmId) return '请先选择猪场'
+      if (!this.$store.state.serviceOnline) return '后端服务离线，请检查服务状态'
+      return ''
+    },
     onMouseMove(e) {
       const mx = e.clientX / window.innerWidth - 0.5
       const my = e.clientY / window.innerHeight - 0.5
@@ -353,6 +585,41 @@ export default {
       if (card._tiltFn) card.removeEventListener('mousemove', card._tiltFn)
       card.style.transform = ''
     },
+    openImagePreview() {
+      if (this.hasResult && this.annotatedImage) {
+        this.showImagePreview = true
+        document.body.style.overflow = 'hidden'
+      }
+    },
+    closeImagePreview() {
+      this.showImagePreview = false
+      document.body.style.overflow = ''
+    },
+    showToastMessage(message, type = 'toast-info', duration = 3000) {
+      this.toastMessage = message
+      this.toastType = type
+      this.toastIcon = type === 'toast-info' ? 'ℹ️' : type === 'toast-error' ? '⚠️' : '✅'
+      this.showToast = true
+      this.showToastProgress = false
+      
+      if (duration > 0) {
+        setTimeout(() => this.closeToast(), duration)
+      }
+    },
+    showToastWithProgress(message, type = 'toast-info') {
+      this.toastMessage = message
+      this.toastType = type
+      this.toastIcon = type === 'toast-info' ? 'ℹ️' : type === 'toast-error' ? '⚠️' : '✅'
+      this.showToast = true
+      this.showToastProgress = true
+      this.toastProgress = 0
+    },
+    updateToastProgress(progress) {
+      this.toastProgress = progress
+    },
+    closeToast() {
+      this.showToast = false
+    },
     onTopFileChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
     onDropInputChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
     onDrop(e) { this.isDragging = false; const f = e.dataTransfer.files[0]; if (f) this.processFile(f) },
@@ -371,21 +638,47 @@ export default {
       this.clearCanvas()
     },
     async runAnalysis() {
-      if (!this.hasImage || this.isAnalyzing) return
+      if (!this.hasImage || this.isAnalyzing || !this.selectedFarmId) return
+      if (!this.$store.state.serviceOnline) {
+        this.$store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
+        this.showToastMessage('后端服务离线，无法识别图片', 'toast-error', 4000)
+        return
+      }
       const btn = this.$refs.analyzeBtn
       if (btn) { btn.style.transform = 'scale(0.93)'; setTimeout(() => { btn.style.transform = '' }, 150) }
       this.$store.commit('SET_ANALYZING', true)
       this.$store.commit('SET_PROGRESS', 0)
       this.$store.commit('ADD_LOG', { msg: '发送至数猪大模型…', type: 'info' })
+      
+      // 显示带进度的顶部提示栏
+      this.showToastWithProgress('正在识别图片...', 'toast-info')
+      
       try {
-        const result = await analyzeImage(this.$store.state.imageFile, p => this.$store.commit('SET_PROGRESS', p))
+        const result = await analyzeImage(this.$store.state.imageFile, (p) => {
+          this.$store.commit('SET_PROGRESS', p)
+          this.updateToastProgress(p)
+        }, this.selectedFarmId)
         this.$store.commit('SET_RESULT', result)
         this.$store.commit('SET_PROGRESS', 100)
+        this.updateToastProgress(100)
+        
+        // 显示识别成功提示
+        setTimeout(() => {
+          this.showToastMessage(`识别完成：检测到 ${result.count} 头猪`, 'toast-success', 3000)
+        }, 500)
+        
         this.$store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
         this.$store.commit('ADD_LOG', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
+        // 识别成功后刷新统计数据
+        await this.loadDetectionStats()
       } catch (err) {
         this.$store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' })
-      } finally { this.$store.commit('SET_ANALYZING', false) }
+        this.showToastMessage('识别失败：' + err.message, 'toast-error', 4000)
+      } finally { 
+        this.$store.commit('SET_ANALYZING', false) 
+        // 延迟关闭提示栏，让用户看到完成状态
+        setTimeout(() => this.closeToast(), 1000)
+      }
     },
     onResultImgLoad() { if (this.hasResult) this.drawBoxesAnimated() },
     drawBoxesAnimated() {
@@ -459,8 +752,125 @@ export default {
         const online = await checkHealth()
         this.$store.commit('SET_SERVICE_STATUS', online)
         this.$store.commit('ADD_LOG', { msg: online ? '服务在线' : '服务未响应（Mock 模式）', type: online ? 'success' : 'warn' })
+        // 服务在线时加载猪场列表和统计数据
+        if (online) {
+          await this.loadFarms()
+          await this.loadDetectionStats()
+        }
       } catch { this.$store.commit('SET_SERVICE_STATUS', false) }
       finally { this.checkingService = false }
+    },
+
+    // ========== 统计数据方法 ==========
+    async loadDetectionStats() {
+      try {
+        const response = await getDetectionStats(this.selectedFarmId)
+        if (response.success) {
+          this.systemStats = response.data
+        }
+      } catch (err) {
+        console.error('加载统计数据失败:', err)
+      }
+    },
+
+    // ========== 猪场管理方法 ==========
+    async loadFarms() {
+      try {
+        const response = await getFarms()
+        if (response.success) {
+          this.farms = response.data
+          this.$store.commit('ADD_LOG', { msg: `已加载 ${this.farms.length} 个猪场`, type: 'info' })
+        }
+      } catch (err) {
+        this.$store.commit('ADD_LOG', { msg: '加载猪场列表失败：' + err.message, type: 'error' })
+      }
+    },
+    async onFarmChange() {
+      const farm = this.farms.find(f => f.id === this.selectedFarmId)
+      if (farm) {
+        this.$store.commit('ADD_LOG', { msg: `已选择猪场：${farm.name}`, type: 'info' })
+      }
+      // 切换猪场后刷新统计数据
+      await this.loadDetectionStats()
+    },
+    closeFarmModal() {
+      this.showFarmModal = false
+      this.newFarmName = ''
+      this.editingFarmId = null
+      this.editingFarmName = ''
+    },
+    async addFarm() {
+      const name = this.newFarmName.trim()
+      if (!name) return
+      this.isAddingFarm = true
+      try {
+        const response = await createFarm(name)
+        if (response.success) {
+          this.farms.unshift(response.data)
+          this.newFarmName = ''
+          this.$store.commit('ADD_LOG', { msg: `成功添加猪场：${response.data.name}`, type: 'success' })
+        }
+      } catch (err) {
+        this.$store.commit('ADD_LOG', { msg: '添加猪场失败：' + err.message, type: 'error' })
+      } finally {
+        this.isAddingFarm = false
+      }
+    },
+    startEditFarm(farm) {
+      this.editingFarmId = farm.id
+      this.editingFarmName = farm.name
+      this.$nextTick(() => {
+        const input = this.$refs.editInput
+        if (input && input[0]) input[0].focus()
+      })
+    },
+    cancelEditFarm() {
+      this.editingFarmId = null
+      this.editingFarmName = ''
+    },
+    async saveEditFarm() {
+      const name = this.editingFarmName.trim()
+      if (!name || name === this.farms.find(f => f.id === this.editingFarmId)?.name) {
+        this.cancelEditFarm()
+        return
+      }
+      try {
+        const response = await updateFarm(this.editingFarmId, name)
+        if (response.success) {
+          const index = this.farms.findIndex(f => f.id === this.editingFarmId)
+          if (index !== -1) {
+            this.farms.splice(index, 1, response.data)
+          }
+          this.$store.commit('ADD_LOG', { msg: `成功更新猪场：${response.data.name}`, type: 'success' })
+        }
+      } catch (err) {
+        this.$store.commit('ADD_LOG', { msg: '更新猪场失败：' + err.message, type: 'error' })
+      } finally {
+        this.editingFarmId = null
+        this.editingFarmName = ''
+      }
+    },
+    async deleteFarmById(farmId) {
+      const farm = this.farms.find(f => f.id === farmId)
+      if (!farm) return
+      if (!confirm(`确定要删除猪场"${farm.name}"吗？`)) return
+      try {
+        const response = await deleteFarm(farmId)
+        if (response.success) {
+          this.farms = this.farms.filter(f => f.id !== farmId)
+          if (this.selectedFarmId === farmId) {
+            this.selectedFarmId = null
+          }
+          this.$store.commit('ADD_LOG', { msg: `成功删除猪场：${farm.name}`, type: 'success' })
+        }
+      } catch (err) {
+        this.$store.commit('ADD_LOG', { msg: '删除猪场失败：' + err.message, type: 'error' })
+      }
+    },
+    formatFarmDate(dateStr) {
+      if (!dateStr) return ''
+      const date = new Date(dateStr)
+      return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
     }
   }
 }
@@ -844,6 +1254,37 @@ body {
   cursor: not-allowed
 }
 
+.btn-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--orange);
+  margin-left: 8px;
+  animation: pulse 2s infinite
+}
+
+.btn-hint--error {
+  color: #ff3b30;
+  font-weight: 600;
+  background: rgba(255, 59, 48, 0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 59, 48, 0.2)
+}
+
+.btn-hint--warning {
+  color: #ff9500;
+  font-weight: 600;
+  background: rgba(255, 149, 0, 0.08);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 149, 0, 0.2)
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1 }
+  50% { opacity: 0.6 }
+}
+
 .btn-primary-inner {
   display: flex;
   align-items: center;
@@ -992,9 +1433,9 @@ body {
   transition: border-color 0.3s
 }
 
-.stat-card--active .stat-card-border {
+/* .stat-card--active .stat-card-border {
   border-color: rgba(255, 107, 129, 0.22)
-}
+} */
 
 .stat-icon-wrap {
   margin-bottom: 12px
@@ -1457,6 +1898,309 @@ body {
   }
 }
 
+/* ========== 当前猪场信息卡片样式 ========== */
+.top-info-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  align-items: stretch
+}
+
+.current-farm-section {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex
+}
+
+.system-stats-section {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex
+}
+
+@media (max-width: 1024px) {
+  .top-info-row {
+    flex-direction: column;
+    gap: 16px
+  }
+
+  .current-farm-section,
+  .system-stats-section {
+    flex: 1 1 100%
+  }
+}
+
+.farm-info-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  width: 100%
+}
+
+.farm-info-card--warning {
+  border: 2px solid rgba(255, 149, 0, 0.3);
+  background: rgba(255, 149, 0, 0.05)
+}
+
+.farm-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 149, 0, 0.12);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 149, 0, 0.2)
+}
+
+.farm-warning-icon {
+  font-size: 18px
+}
+
+.farm-warning-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--orange)
+}
+
+.farm-info-name--placeholder {
+  color: var(--text-4);
+  font-style: italic
+}
+
+.farm-info-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px
+}
+
+.farm-info-icon {
+  font-size: 36px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1))
+}
+
+.farm-info-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px
+}
+
+.farm-info-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px
+}
+
+.farm-info-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px
+}
+
+.farm-info-meta {
+  display: flex;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--sep)
+}
+
+.farm-info-id {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums
+}
+
+/* ========== 系统统计信息样式 ========== */
+.system-stats-card {
+  padding: 20px 24px;
+  width: 100%;
+  display: flex;
+  flex-direction: column
+}
+
+.system-stats-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sep)
+}
+
+.system-stats-icon {
+  font-size: 20px
+}
+
+.system-stats-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2)
+}
+
+.system-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  flex: 1;
+  align-content: center
+}
+
+.system-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.04)
+}
+
+.system-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px
+}
+
+.system-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-4)
+}
+
+@media (max-width: 768px) {
+  .system-stats-grid {
+    grid-template-columns: repeat(2, 1fr)
+  }
+}
+
+.farm-info-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--orange)
+}
+
+/* ========== 图片预览模态框样式 ========== */
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px
+}
+
+.preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px)
+}
+
+.preview-container {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2)
+}
+
+.preview-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s
+}
+
+.preview-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1)
+}
+
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: calc(90vh - 80px);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5)
+}
+
+.preview-info {
+  display: flex;
+  gap: 12px
+}
+
+.preview-badge {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  backdrop-filter: blur(4px)
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0
+}
+
+.modal-fade-enter-active .preview-container,
+.modal-fade-leave-active .preview-container {
+  transition: transform 0.3s ease
+}
+
+.modal-fade-enter-from .preview-container,
+.modal-fade-leave-to .preview-container {
+  transform: scale(0.9)
+}
+
+.canvas-wrap--clickable {
+  cursor: pointer
+}
+
+.canvas-wrap--clickable:hover {
+  box-shadow: 0 0 0 3px rgba(30, 190, 110, 0.3);
+  border-radius: 8px
+}
+
 .detail-card {
   overflow: hidden
 }
@@ -1526,7 +2270,28 @@ body {
 }
 
 .table-scroll {
-  overflow-x: auto
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sep) transparent;
+}
+
+.table-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--sep);
+  border-radius: 3px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
 }
 
 .det-table {
@@ -1912,5 +2677,534 @@ body {
 
 .overlay-bloom-leave-to {
   opacity: 0
+}
+
+/* ========== 猪场选择器样式 ========== */
+.farm-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 12px
+}
+
+.farm-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center
+}
+
+.farm-select {
+  appearance: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  padding: 8px 36px 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 150px;
+  height: 42px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: space-between
+}
+
+.farm-select:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+  border-color: rgba(0, 122, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px)
+}
+
+.farm-select--open {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.15), 0 4px 12px rgba(0, 122, 255, 0.15);
+  transform: translateY(-1px)
+}
+
+.farm-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.farm-select-arrow {
+  position: absolute;
+  right: 14px;
+  font-size: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+  transition: all 0.3s ease;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))
+}
+
+.farm-select-arrow--open {
+  transform: rotate(180deg);
+  color: var(--blue)
+}
+
+.farm-select-wrap:hover .farm-select-arrow:not(.farm-select-arrow--open) {
+  color: var(--blue);
+  transform: translateY(-1px)
+}
+
+.farm-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(20px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  overflow: hidden;
+  animation: dropdownIn 0.25s cubic-bezier(0.4, 0, 0.2, 1)
+}
+
+@keyframes dropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    transform-origin: top center
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1)
+  }
+}
+
+.farm-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease
+}
+
+.farm-dropdown-item:hover {
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.08) 0%, rgba(0, 122, 255, 0.04) 100%);
+  color: var(--blue)
+}
+
+.farm-dropdown-item--active {
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.12) 0%, rgba(0, 122, 255, 0.06) 100%);
+  color: var(--blue)
+}
+
+.farm-dropdown-item-icon {
+  font-size: 18px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1))
+}
+
+.farm-dropdown-item-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.btn-farm-manage {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8)
+}
+
+.btn-farm-manage:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+  border-color: rgba(0, 122, 255, 0.3);
+  color: var(--blue);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px)
+}
+
+.btn-farm-manage:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8)
+}
+
+/* ========== 猪场管理弹窗样式 ========== */
+.farm-modal .modal-glass {
+  padding: 28px;
+  min-width: 420px;
+  max-width: 520px;
+  max-height: 70vh;
+  overflow-y: auto;
+  text-align: left
+}
+
+.farm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--sep)
+}
+
+.farm-modal-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0
+}
+
+.btn-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 20px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1
+}
+
+.btn-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text)
+}
+
+.farm-add-section {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px
+}
+
+.farm-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  outline: none;
+  transition: all 0.2s ease
+}
+
+.farm-input:focus {
+  border-color: var(--blue);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.08)
+}
+
+.farm-input--edit {
+  padding: 8px 12px;
+  font-size: 13px
+}
+
+.btn-add-farm {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--blue);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px
+}
+
+.btn-add-farm:hover:not(:disabled) {
+  background: #0056d6;
+  transform: translateY(-1px)
+}
+
+.btn-add-farm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed
+}
+
+.btn-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite
+}
+
+.farm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px
+}
+
+.farm-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-4);
+  font-size: 14px
+}
+
+.farm-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  transition: all 0.2s ease
+}
+
+.farm-item:hover {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.08);
+  transform: translateX(2px)
+}
+
+.farm-item--editing {
+  background: rgba(0, 122, 255, 0.05);
+  border-color: rgba(0, 122, 255, 0.2)
+}
+
+.farm-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.farm-date {
+  font-size: 12px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums
+}
+
+.farm-actions {
+  display: flex;
+  gap: 6px
+}
+
+.farm-actions button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px
+}
+
+.btn-farm-edit {
+  color: var(--blue)
+}
+
+.btn-farm-edit:hover {
+  background: rgba(0, 122, 255, 0.1)
+}
+
+.btn-farm-delete {
+  color: var(--red)
+}
+
+.btn-farm-delete:hover {
+  background: rgba(255, 59, 48, 0.1)
+}
+
+.btn-farm-save {
+  color: var(--green)
+}
+
+.btn-farm-save:hover {
+  background: rgba(52, 199, 89, 0.1)
+}
+
+.btn-farm-cancel {
+  color: var(--text-3)
+}
+
+.btn-farm-cancel:hover {
+  background: rgba(0, 0, 0, 0.06)
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg) }
+}
+
+/* ========== 顶部提示栏样式 ========== */
+.toast-bar {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  min-width: 300px;
+  max-width: 500px;
+  width: fit-content;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.toast-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.toast-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.toast-message {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast-progress {
+  width: 60px;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.toast-progress-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.toast-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 50%;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.toast-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-2);
+}
+
+/* 不同类型的提示样式 */
+.toast-info {
+  background: rgba(30, 144, 255, 0.05);
+  border-color: rgba(30, 144, 255, 0.3);
+  box-shadow: 0 8px 32px rgba(30, 144, 255, 0.2);
+}
+
+.toast-info .toast-message {
+  color: #1e90ff;
+}
+
+.toast-error {
+  background: rgba(255, 59, 48, 0.05);
+  border-color: rgba(255, 59, 48, 0.3);
+  box-shadow: 0 8px 32px rgba(255, 59, 48, 0.2);
+}
+
+.toast-error .toast-message {
+  color: #ff3b30;
+}
+
+.toast-success {
+  background: rgba(52, 199, 89, 0.05);
+  border-color: rgba(52, 199, 89, 0.3);
+  box-shadow: 0 8px 32px rgba(52, 199, 89, 0.2);
+}
+
+.toast-success .toast-message {
+  color: #34c759;
+}
+
+/* 动画效果 */
+.toast-slide-enter-active,
+.toast-slide-leave-active {
+  transition: all 0.3s ease;
+}
+
+.toast-slide-enter-from {
+  transform: translateX(-50%) translateY(-20px);
+  opacity: 0;
+}
+
+.toast-slide-leave-to {
+  transform: translateX(-50%) translateY(-20px);
+  opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .toast-bar {
+    left: 20px;
+    right: 20px;
+    transform: none;
+    max-width: none;
+    min-width: 0;
+  }
+  
+  .toast-message {
+    font-size: 13px;
+  }
+  
+  .toast-progress {
+    width: 40px;
+  }
 }
 </style>

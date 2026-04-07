@@ -42,11 +42,15 @@ http.interceptors.response.use(
  * 发送图片至数猪模型进行推理
  * @param {File} imageFile - 图片文件对象
  * @param {Function} onProgress - 上传进度回调 (0~100)
+ * @param {number} farmId - 猪场ID（可选）
  * @returns {Promise<{ count: number, confidence: number, boxes: Array, annotatedImage: string, inferenceTime: number }>}
  */
-export async function analyzeImage(imageFile, onProgress) {
+export async function analyzeImage(imageFile, onProgress, farmId = null) {
   const formData = new FormData()
   formData.append('file', imageFile)
+  if (farmId) {
+    formData.append('farm_id', farmId)
+  }
   // 可选参数，使用后端默认值
   // formData.append('conf_threshold', 0.25)
   // formData.append('iou_threshold', 0.45)
@@ -105,7 +109,7 @@ export async function analyzeImage(imageFile, onProgress) {
 export async function checkHealth() {
   try {
     // 使用 axios 直接访问 /health，不走 BASE_URL
-    const response = await axios.get('/health', { timeout: 5000 })
+    const response = await axios.get('/api/health', { timeout: 5000 })
     return response.data?.status === 'healthy'
   } catch {
     return false
