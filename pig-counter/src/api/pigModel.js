@@ -29,7 +29,45 @@ http.interceptors.request.use(
 http.interceptors.response.use(
   response => response.data,
   error => {
-    const msg = error.response?.data?.detail || error.response?.data?.message || error.message || '网络请求失败'
+    let msg = '网络请求失败'
+    
+    // 处理不同的 HTTP 错误码
+    if (error.response) {
+      switch (error.response.status) {
+        case 400:
+          msg = '请求参数错误，请检查输入'
+          break
+        case 401:
+          msg = '未授权，请重新登录'
+          break
+        case 403:
+          msg = '禁止访问，请联系管理员'
+          break
+        case 404:
+          msg = '调用接口出错，联系管理员'
+          break
+        case 413:
+          msg = error.response.data?.detail || '图片大小超过单次最大上传值！'
+          break
+        case 500:
+          msg = '后端服务出错，联系管理员'
+          break
+        case 502:
+          msg = '后端网络出错，联系管理员'
+          break
+        case 503:
+          msg = '服务暂时不可用，请稍后重试'
+          break
+        case 504:
+          msg = '服务响应超时，请稍后重试'
+          break
+        default:
+          msg = error.response.data?.detail || error.response.data?.message || '服务器错误'
+      }
+    } else if (error.message) {
+      msg = error.message
+    }
+    
     return Promise.reject(new Error(msg))
   }
 )
@@ -39,15 +77,22 @@ http.interceptors.response.use(
 // ============================================================
 
 /**
- * 发送图片至数猪模型进行推理
- * @param {File} imageFile - 图片文件对象
+ * 发送图片至数猪模型进行推理（支持单张或多张图片）
+ * @param {Array<File>|File} imageFiles - 图片文件对象数组或单个图片文件
  * @param {Function} onProgress - 上传进度回调 (0~100)
  * @param {number} farmId - 猪场ID（可选）
- * @returns {Promise<{ count: number, confidence: number, boxes: Array, annotatedImage: string, inferenceTime: number }>}
+ * @returns {Promise<{ count: number, confidence: number, boxes: Array, annotatedImage: string, inferenceTime: number }>} 当传入单张图片时返回单个结果
+ * @returns {Promise<{ totalImages: number, totalPigs: number, results: Array }>} 当传入多张图片时返回批量结果
  */
-export async function analyzeImage(imageFile, onProgress, farmId = null) {
+export async function analyzeImage(imageFiles, onProgress, farmId = null) {
   const formData = new FormData()
-  formData.append('file', imageFile)
+  
+  // 处理单张或多张图片
+  const files = Array.isArray(imageFiles) ? imageFiles : [imageFiles]
+  files.forEach(file => {
+    formData.append('files', file)
+  })
+  
   if (farmId) {
     formData.append('farm_id', farmId)
   }
@@ -56,7 +101,7 @@ export async function analyzeImage(imageFile, onProgress, farmId = null) {
   // formData.append('iou_threshold', 0.45)
   // formData.append('imgsz', 960)
 
-  const response = await http.post('/predict', formData, {
+  const response = await http.post('/predict-batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: e => {
       if (onProgress && e.total) {
@@ -65,40 +110,99 @@ export async function analyzeImage(imageFile, onProgress, farmId = null) {
     }
   })
 
-  // 后端返回格式:
+  // 后端返回格式（批量）:
   // {
   //   "success": true,
-  //   "model_path": "...",
-  //   "image_width": 1920,
-  //   "image_height": 1080,
-  //   "predicted_count": 12,
-  //   "detections": [
-  //     { "x1": 100, "y1": 200, "x2": 300, "y2": 400, "confidence": 0.95, "class_id": 0, "class_name": "pig" }
-  //   ],
-  //   "processing_time_ms": 340,
-  //   "annotated_image": "data:image/jpeg;base64,..."
+  //   "total_images": 2,
+  //   "total_pigs": 25,
+  //   "results": [
+  //     {
+  //       "success": true,
+  //       "model_path": "...",
+  //       "image_width": 1920,
+  //       "image_height": 1080,
+  //       "predicted_count": 12,
+  //       "detections": [...],
+  //       "processing_time_ms": 340,
+  //       "annotated_image": "data:image/jpeg;base64,..."
+  //     },
+  //     {
+  //       "success": true,
+  //       "model_path": "...",
+  //       "image_width": 1920,
+  //       "image_height": 1080,
+  //       "predicted_count": 13,
+  //       "detections": [...],
+  //       "processing_time_ms": 320,
+  //       "annotated_image": "data:image/jpeg;base64,..."
+  //     }
+  //   ]
   // }
 
-  // 计算平均置信度
-  const detections = response.detections || []
-  const avgConfidence = detections.length > 0
-    ? detections.reduce((sum, d) => sum + d.confidence, 0) / detections.length
-    : 0
+  // 如果是单张图片，返回单个结果
+  if (!Array.isArray(imageFiles)) {
+    const result = response.results[0]
+    if (!result) {
+      return {
+        count: 0,
+        confidence: 0,
+        boxes: [],
+        annotatedImage: null,
+        inferenceTime: null
+      }
+    }
+    
+    // 计算平均置信度
+    const detections = result.detections || []
+    const avgConfidence = detections.length > 0
+      ? detections.reduce((sum, d) => sum + d.confidence, 0) / detections.length
+      : 0
 
+    return {
+      count:         result.predicted_count ?? 0,
+      confidence:    avgConfidence,
+      boxes:         detections.map((d, i) => ({
+        x1: d.x1,
+        y1: d.y1,
+        x2: d.x2,
+        y2: d.y2,
+        score: d.confidence,
+        class_name: d.class_name,
+        id: i
+      })),
+      annotatedImage: result.annotated_image || null,
+      inferenceTime: result.processing_time_ms ?? null
+    }
+  }
+  
+  // 如果是多张图片，返回批量结果
   return {
-    count:         response.predicted_count ?? 0,
-    confidence:    avgConfidence,
-    boxes:         detections.map((d, i) => ({
-      x1: d.x1,
-      y1: d.y1,
-      x2: d.x2,
-      y2: d.y2,
-      score: d.confidence,
-      class_name: d.class_name,
-      id: i
-    })),
-    annotatedImage: response.annotated_image || null,
-    inferenceTime: response.processing_time_ms ?? null
+    totalImages: response.total_images,
+    totalPigs: response.total_pigs,
+    results: response.results.map((result, index) => {
+      // 计算平均置信度
+      const detections = result.detections || []
+      const avgConfidence = detections.length > 0
+        ? detections.reduce((sum, d) => sum + d.confidence, 0) / detections.length
+        : 0
+
+      return {
+        count:         result.predicted_count ?? 0,
+        confidence:    avgConfidence,
+        boxes:         detections.map((d, i) => ({
+          x1: d.x1,
+          y1: d.y1,
+          x2: d.x2,
+          y2: d.y2,
+          score: d.confidence,
+          class_name: d.class_name,
+          id: i
+        })),
+        annotatedImage: result.annotated_image || null,
+        inferenceTime: result.processing_time_ms ?? null,
+        fileName: files[index].name
+      }
+    })
   }
 }
 

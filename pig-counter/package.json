@@ -1,7 +1,7 @@
 {
   "name": "pig-counter",
   "version": "1.0.0",
-  "description": "智能数猪大模型前端系统",
+  "description": "智慧猪群识别系统",
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
+    "chart.js": "^4.5.1",
+    "echarts": "^6.0.0",
     "vue": "^2.7.14",
     "vue-router": "^3.6.5",
     "vuex": "^3.6.2"
@@ -24,10 +26,21 @@
   },
   "eslintConfig": {
     "root": true,
-    "env": { "node": true },
-    "extends": ["plugin:vue/essential", "eslint:recommended"],
-    "parserOptions": { "parser": "babel-eslint" },
+    "env": {
+      "node": true
+    },
+    "extends": [
+      "plugin:vue/essential",
+      "eslint:recommended"
+    ],
+    "parserOptions": {
+      "parser": "babel-eslint"
+    },
     "rules": {}
   },
-  "browserslist": ["> 1%", "last 2 versions", "not dead"]
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
 }

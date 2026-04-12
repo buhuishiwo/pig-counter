@@ -7,7 +7,7 @@
       <div class="ambient-grid"></div>
     </div>
 
-    <nav class="topbar">
+    <nav class="topbar" :class="{ 'topbar--scrolled': scrolled }">
       <div class="topbar-inner">
         <div class="topbar-brand">
           <div class="brand-logo">
@@ -40,11 +40,13 @@
               <span class="farm-select-arrow" :class="{ 'farm-select-arrow--open': showFarmDropdown }">▼</span>
             </div>
             <div class="farm-dropdown" v-if="showFarmDropdown">
-              <div class="farm-dropdown-item" :class="{ 'farm-dropdown-item--active': selectedFarmId === null }" @click.stop="selectFarm(null)">
+              <div class="farm-dropdown-item" :class="{ 'farm-dropdown-item--active': selectedFarmId === null }"
+                @click.stop="selectFarm(null)">
                 <span class="farm-dropdown-item-icon">🏠</span>
                 <span class="farm-dropdown-item-text">请选择猪场</span>
               </div>
-              <div class="farm-dropdown-item" v-for="farm in farms" :key="farm.id" :class="{ 'farm-dropdown-item--active': selectedFarmId === farm.id }" @click.stop="selectFarm(farm.id)">
+              <div class="farm-dropdown-item" v-for="farm in farms" :key="farm.id"
+                :class="{ 'farm-dropdown-item--active': selectedFarmId === farm.id }" @click.stop="selectFarm(farm.id)">
                 <span class="farm-dropdown-item-icon">🏭</span>
                 <span class="farm-dropdown-item-text">{{ farm.name }}</span>
               </div>
@@ -68,9 +70,11 @@
             上传图片
           </label>
           <input id="top-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" style="display:none"
-            @change="onTopFileChange" />
+            multiple @change="onTopFileChange" />
 
-          <button class="btn-primary" :disabled="!hasImage || !selectedFarmId || isAnalyzing || !$store.state.serviceOnline" @click="runAnalysis" ref="analyzeBtn" :title="getAnalyzeBtnTitle()">
+          <button class="btn-primary"
+            :disabled="!hasImage || !selectedFarmId || isAnalyzing || !$store.state.serviceOnline" @click="runAnalysis"
+            ref="analyzeBtn" :title="getAnalyzeBtnTitle()">
             <span class="btn-primary-inner">
               <span v-if="isAnalyzing" class="btn-spinner"></span>
               <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -91,6 +95,22 @@
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
+
+          <router-link v-if="$route.path === '/'" to="/stats" class="btn-ghost" title="查看统计数据">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+            统计页面
+          </router-link>
+          <router-link v-else-if="$route.path === '/stats'" to="/" class="btn-ghost" title="返回识别页面">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            识别页面
+          </router-link>
         </div>
       </div>
       <div class="topbar-scan" v-if="isAnalyzing">
@@ -98,8 +118,98 @@
         <div class="topbar-scan-glow" :style="{ left: uploadProgress + '%' }"></div>
       </div>
     </nav>
+    <transition name="capsule-drop">
+      <div class="capsule-nav" v-show="scrolled">
+        <div class="capsule-inner">
 
-    <div class="page-wrap">
+
+          <!-- 服务状态 -->
+          <div class="service-pill" :class="serviceClass" style="padding:5px 11px;font-size:11px;">
+            <div class="service-dot"></div>
+            <span>{{ serviceLabel }}</span>
+            <button class="service-recheck" @click="checkServiceHealth" :disabled="checkingService">↺</button>
+          </div>
+          <div class="capsule-sep"></div>
+
+          <!-- 猪场选择 -->
+          <div class="capsule-farm-wrap" ref="capsuleFarmWrap" @click="toggleFarmDropdown">
+            <div class="capsule-farm">
+               🏠{{ currentFarmName === '未选择' ? '请选择猪场' : currentFarmName }}
+              <!-- <span class="farm-select-arrow" :class="{ 'farm-select-arrow--open': showFarmDropdown }"></span> -->
+            </div>
+            <!-- 复用已有的下拉菜单逻辑 -->
+            <div class="farm-dropdown" v-if="showFarmDropdown">
+              <div class="farm-dropdown-item" v-for="farm in farms" :key="farm.id"
+                :class="{ 'farm-dropdown-item--active': selectedFarmId === farm.id }" @click.stop="selectFarm(farm.id)">
+                <span class="farm-dropdown-item-icon">🏭</span>
+                <span class="farm-dropdown-item-text">{{ farm.name }}</span>
+              </div>
+            </div>
+          </div>
+
+
+          <!-- 管理猪场 -->
+          <button class="capsule-btn-ghost" @click="showFarmModal = true" title="管理猪场">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
+          <div class="capsule-sep"></div>
+          <!-- 上传图片，复用同一个 input -->
+          <label class="capsule-btn-ghost" for="top-file-input" style="cursor:pointer;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            上传图片
+          </label>
+
+          <!-- 清除图片 -->
+          <button v-if="hasImage && !isAnalyzing" class="capsule-btn-ghost capsule-btn-clear" @click="clearImage"
+            title="清除图片">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+
+          <!-- 开始识别 -->
+          <button class="capsule-btn-primary"
+            :disabled="!hasImage || !selectedFarmId || isAnalyzing || !$store.state.serviceOnline" @click="runAnalysis"
+            :title="getAnalyzeBtnTitle()">
+            <span v-if="isAnalyzing" class="btn-spinner"></span>
+            <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            {{ isAnalyzing ? '识别中…' : '开始识别' }}
+          </button>
+
+          <!-- 统计页面跳转 -->
+          <router-link v-if="$route.path === '/'" to="/stats" class="capsule-btn-ghost">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+            统计
+          </router-link>
+          <router-link v-else-if="$route.path === '/stats'" to="/" class="capsule-btn-ghost">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            识别
+          </router-link>
+
+        </div>
+      </div>
+    </transition>
+    <!-- 路由视图 -->
+    <router-view v-if="$route.path !== '/'" />
+    <div v-else class="page-wrap">
       <!-- 顶部信息行：猪场信息 + 系统统计 -->
       <div class="top-info-row">
         <!-- 当前猪场信息卡片 -->
@@ -113,7 +223,8 @@
               <div class="farm-info-icon">🏭</div>
               <div class="farm-info-title">
                 <span class="farm-info-label">当前猪场</span>
-                <span class="farm-info-name" :class="{ 'farm-info-name--placeholder': !selectedFarmId }">{{ currentFarmName }}</span>
+                <span class="farm-info-name" :class="{ 'farm-info-name--placeholder': !selectedFarmId }">{{
+                  currentFarmName }}</span>
               </div>
             </div>
             <div class="farm-info-meta">
@@ -154,8 +265,7 @@
 
       <div class="stat-row">
         <div v-for="(card, i) in statCards" :key="i" class="stat-card glass-card"
-          :class="{ 'stat-card--active': card.active }" :style="{ '--delay': (i * 60) + 'ms' }"
-          @mouseenter="cardFloatIn($event)" @mouseleave="cardFloatOut($event)">
+          :class="{ 'stat-card--active': card.active }" :style="{ '--delay': (i * 60) + 'ms' }">
           <div class="stat-card-shimmer"></div>
           <div class="stat-icon-wrap"><span class="stat-icon">{{ card.icon }}</span></div>
           <div class="stat-body">
@@ -172,16 +282,22 @@
       </div>
 
       <div class="image-row">
-        <div class="img-card glass-card" :class="{ floating: hasImage }" @mouseenter="cardFloatIn($event)"
-          @mouseleave="cardFloatOut($event)">
+        <div class="img-card glass-card" :class="{ floating: hasImage }">
           <div class="img-card-header">
             <div class="img-card-header-left">
               <span class="traffic-dot dot-yellow"></span>
               <span class="img-card-title">原图</span>
             </div>
-            <transition name="meta-slide">
-              <span class="img-card-chip" v-if="imageMeta">{{ imageMeta.name }}</span>
-            </transition>
+            <div class="img-card-header-right">
+              <transition name="meta-slide">
+                <span class="img-card-chip" v-if="imageMeta">{{ imageMeta.name }}</span>
+              </transition>
+              <transition name="meta-slide">
+                <span v-if="$store.state.imageFiles.length > 1" class="img-card-count">
+                  {{ $store.state.currentImageIndex + 1 }}/{{ $store.state.imageFiles.length }}
+                </span>
+              </transition>
+            </div>
           </div>
           <div class="img-card-body">
             <div class="dropzone" :class="{ 'dropzone--filled': hasImage, 'dropzone--drag': isDragging }"
@@ -202,7 +318,8 @@
                   <span>松开以上传</span>
                 </div>
               </transition>
-              <input ref="dropInput" type="file" accept="image/*" style="display:none" @change="onDropInputChange" />
+              <input ref="dropInput" type="file" accept="image/*" style="display:none" multiple
+                @change="onDropInputChange" />
             </div>
             <transition name="meta-slide">
               <div class="img-meta-bar" v-if="imageMeta">
@@ -212,23 +329,43 @@
               </div>
             </transition>
           </div>
+          <div v-if="$store.state.imageFiles.length > 1" class="img-navigation">
+            <button class="nav-btn nav-btn-prev" @click="prevImage" title="上一张">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <button class="nav-btn nav-btn-next" @click="nextImage" title="下一张">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="img-card glass-card result-img-card"
-          :class="{ 'result-img-card--ready': hasResult, floating: hasImage }" @mouseenter="cardFloatIn($event)"
-          @mouseleave="cardFloatOut($event)">
+          :class="{ 'result-img-card--ready': hasResult, floating: hasImage }">
           <div class="img-card-header">
             <div class="img-card-header-left">
               <span class="traffic-dot" :class="hasResult ? 'dot-green' : 'dot-gray'"></span>
               <span class="img-card-title">标注结果</span>
             </div>
-            <transition name="meta-slide">
-              <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ pigCount }} 头猪</span>
-            </transition>
+            <div class="img-card-header-right">
+              <transition name="meta-slide">
+                <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ $store.getters.currentPigCount }}
+                  头猪</span>
+              </transition>
+              <transition name="meta-slide">
+                <span v-if="$store.state.results.length > 1" class="img-card-count">
+                  {{ $store.state.currentImageIndex + 1 }}/{{ $store.state.results.length }}
+                </span>
+              </transition>
+            </div>
           </div>
           <div class="img-card-body">
             <div class="result-zone" :class="{ 'result-zone--active': hasResult }">
-              <div class="canvas-wrap" v-if="hasImage" @click="openImagePreview" :class="{ 'canvas-wrap--clickable': hasResult }">
+              <div class="canvas-wrap" v-if="hasImage" @click="openImagePreview"
+                :class="{ 'canvas-wrap--clickable': hasResult }">
                 <img :src="previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
                   @load="onResultImgLoad" />
                 <canvas ref="boxCanvas" class="box-canvas"></canvas>
@@ -269,6 +406,18 @@
               </div>
             </transition>
           </div>
+          <div v-if="$store.state.results.length > 1" class="img-navigation">
+            <button class="nav-btn nav-btn-prev" @click="prevImage" title="上一张">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <button class="nav-btn nav-btn-next" @click="nextImage" title="下一张">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -304,7 +453,8 @@
                   <td>
                     <div class="conf-cell">
                       <div class="conf-track">
-                        <div class="conf-fill" :class="getConfClass(box.score)" :style="{ width: (box.score * 100) + '%' }">
+                        <div class="conf-fill" :class="getConfClass(box.score)"
+                          :style="{ width: (box.score * 100) + '%' }">
                         </div>
                       </div>
                       <span class="conf-val" :class="getConfClass(box.score)">{{ (box.score * 100).toFixed(1) }}%</span>
@@ -358,14 +508,8 @@
 
           <!-- 添加新猪场 -->
           <div class="farm-add-section">
-            <input
-              v-model="newFarmName"
-              type="text"
-              class="farm-input"
-              placeholder="输入新猪场名称"
-              @keyup.enter="addFarm"
-              maxlength="100"
-            />
+            <input v-model="newFarmName" type="text" class="farm-input" placeholder="输入新猪场名称" @keyup.enter="addFarm"
+              maxlength="100" />
             <button class="btn-add-farm" @click="addFarm" :disabled="!newFarmName.trim() || isAddingFarm">
               <span v-if="isAddingFarm" class="btn-spinner-small"></span>
               <span v-else>+ 添加</span>
@@ -377,22 +521,11 @@
             <div v-if="farms.length === 0" class="farm-empty">
               暂无猪场，请添加
             </div>
-            <div
-              v-for="farm in farms"
-              :key="farm.id"
-              class="farm-item"
-              :class="{ 'farm-item--editing': editingFarmId === farm.id }"
-            >
+            <div v-for="farm in farms" :key="farm.id" class="farm-item"
+              :class="{ 'farm-item--editing': editingFarmId === farm.id }">
               <template v-if="editingFarmId === farm.id">
-                <input
-                  v-model="editingFarmName"
-                  type="text"
-                  class="farm-input farm-input--edit"
-                  @keyup.enter="saveEditFarm"
-                  @keyup.esc="cancelEditFarm"
-                  ref="editInput"
-                  maxlength="100"
-                />
+                <input v-model="editingFarmName" type="text" class="farm-input farm-input--edit"
+                  @keyup.enter="saveEditFarm" @keyup.esc="cancelEditFarm" ref="editInput" maxlength="100" />
                 <div class="farm-actions">
                   <button class="btn-farm-save" @click="saveEditFarm" title="保存">✓</button>
                   <button class="btn-farm-cancel" @click="cancelEditFarm" title="取消">✕</button>
@@ -448,6 +581,7 @@ export default {
   components: { LogPanel },
   data() {
     return {
+      scrolled: false,
       checkingService: false,
       isDragging: false,
       hoveredBox: null,
@@ -519,7 +653,7 @@ export default {
         { icon: '🐷', label: '预测数量', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
         { icon: '⚡', label: '处理耗时', value: this.inferenceTime, unit: this.inferenceTime ? 'ms' : null, cls: '', active: !!this.inferenceTime },
         { icon: '🎯', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: this.confClass, active: this.hasResult },
-        { icon: '📐', label: '图像尺寸', value: this.imageMeta ? this.imageMeta.width + '×' + this.imageMeta.height : null, unit: null, cls: 'stat-sm', active: !!this.imageMeta }
+        { icon: '🐖', label: '当次识别总数', value: this.$store.state.totalPigs, unit: '头', cls: '', active: this.$store.state.totalPigs !== null }
       ]
     }
   },
@@ -528,22 +662,36 @@ export default {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) }
   },
   created() { this.checkServiceHealth() },
-  mounted() { 
+  mounted() {
     window.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('keydown', this.onKeyDown)
     document.addEventListener('click', this.handleClickOutside)
+
+    const scroller = document.querySelector('.page-wrap') // 或其他容器
+    this._scroller = scroller || window
+    this._scroller.addEventListener('scroll', this.onScroll)
+    window.addEventListener('scroll', this.onScroll)
   },
-  beforeDestroy() { 
+  beforeDestroy() {
     window.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('keydown', this.onKeyDown)
     document.removeEventListener('click', this.handleClickOutside)
+    this._scroller.removeEventListener('scroll', this.onScroll)
   },
   methods: {
+    onScroll() {
+      this.scrolled = window.scrollY > 80
+    },
     toggleFarmDropdown() {
       this.showFarmDropdown = !this.showFarmDropdown
     },
     handleClickOutside(e) {
-      if (this.$refs.farmSelectWrap && !this.$refs.farmSelectWrap.contains(e.target)) {
+      const wrap = this.$refs.farmSelectWrap
+      const capsuleWrap = this.$refs.capsuleFarmWrap
+      if (
+        wrap && !wrap.contains(e.target) &&
+        (!capsuleWrap || !capsuleWrap.contains(e.target))
+      ) {
         this.showFarmDropdown = false
       }
     },
@@ -570,21 +718,7 @@ export default {
       if (o1) o1.style.transform = 'translate(' + (mx * 30) + 'px,' + (my * 30) + 'px)'
       if (o2) o2.style.transform = 'translate(' + (-mx * 20) + 'px,' + (-my * 20) + 'px)'
     },
-    cardFloatIn(e) {
-      const card = e.currentTarget
-      card._tiltFn = (ev) => {
-        const r = card.getBoundingClientRect()
-        const cx = (ev.clientX - r.left) / r.width - 0.5
-        const cy = (ev.clientY - r.top) / r.height - 0.5
-        card.style.transform = 'perspective(800px) rotateX(' + (-cy * 3) + 'deg) rotateY(' + (cx * 3) + 'deg) translateY(-2px)'
-      }
-      card.addEventListener('mousemove', card._tiltFn)
-    },
-    cardFloatOut(e) {
-      const card = e.currentTarget
-      if (card._tiltFn) card.removeEventListener('mousemove', card._tiltFn)
-      card.style.transform = ''
-    },
+
     openImagePreview() {
       if (this.hasResult && this.annotatedImage) {
         this.showImagePreview = true
@@ -601,7 +735,12 @@ export default {
       this.toastIcon = type === 'toast-info' ? 'ℹ️' : type === 'toast-error' ? '⚠️' : '✅'
       this.showToast = true
       this.showToastProgress = false
-      
+
+      // 延长错误提示的显示时间
+      if (type === 'toast-error') {
+        duration = 6000 // 错误提示显示6秒
+      }
+
       if (duration > 0) {
         setTimeout(() => this.closeToast(), duration)
       }
@@ -620,17 +759,74 @@ export default {
     closeToast() {
       this.showToast = false
     },
-    onTopFileChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
-    onDropInputChange(e) { const f = e.target.files[0]; if (f) this.processFile(f); e.target.value = '' },
-    onDrop(e) { this.isDragging = false; const f = e.dataTransfer.files[0]; if (f) this.processFile(f) },
+    // 图片导航方法
+    prevImage() {
+      const currentIndex = this.$store.state.currentImageIndex
+      const totalImages = this.$store.state.imageFiles.length
+      if (totalImages > 0) {
+        const newIndex = (currentIndex - 1 + totalImages) % totalImages
+        this.$store.commit('SET_CURRENT_IMAGE_INDEX', newIndex)
+      }
+    },
+    nextImage() {
+      const currentIndex = this.$store.state.currentImageIndex
+      const totalImages = this.$store.state.imageFiles.length
+      if (totalImages > 0) {
+        const newIndex = (currentIndex + 1) % totalImages
+        this.$store.commit('SET_CURRENT_IMAGE_INDEX', newIndex)
+      }
+    },
+    onTopFileChange(e) {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) this.processFiles(files);
+      e.target.value = ''
+    },
+    onDropInputChange(e) {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) this.processFiles(files);
+      e.target.value = ''
+    },
+    onDrop(e) {
+      this.isDragging = false;
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      if (files.length > 0) this.processFiles(files);
+    },
+    async processFiles(files) {
+      // 验证所有文件
+      for (const file of files) {
+        const { valid, error } = validateImage(file);
+        if (!valid) {
+          this.$store.commit('ADD_LOG', { msg: `文件 ${file.name} 验证失败：${error}`, type: 'error' });
+          return;
+        }
+      }
+
+      // 处理所有文件
+      const previewUrls = [];
+      const metas = [];
+
+      for (const file of files) {
+        const dataURL = await fileToDataURL(file);
+        const dim = await getImageDimensions(dataURL);
+        const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height };
+        previewUrls.push(dataURL);
+        metas.push(meta);
+        this.$store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' });
+      }
+
+      this.$store.commit('SET_IMAGES', { files, previewUrls, metas });
+    },
     async processFile(file) {
-      const { valid, error } = validateImage(file)
-      if (!valid) { this.$store.commit('ADD_LOG', { msg: error, type: 'error' }); return }
-      const dataURL = await fileToDataURL(file)
-      const dim = await getImageDimensions(dataURL)
-      const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
-      this.$store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta })
-      this.$store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+      const { valid, error } = validateImage(file);
+      if (!valid) {
+        this.$store.commit('ADD_LOG', { msg: error, type: 'error' });
+        return;
+      }
+      const dataURL = await fileToDataURL(file);
+      const dim = await getImageDimensions(dataURL);
+      const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height };
+      this.$store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta });
+      this.$store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' });
     },
     clearImage() {
       this.$store.commit('CLEAR_IMAGE')
@@ -648,34 +844,56 @@ export default {
       if (btn) { btn.style.transform = 'scale(0.93)'; setTimeout(() => { btn.style.transform = '' }, 150) }
       this.$store.commit('SET_ANALYZING', true)
       this.$store.commit('SET_PROGRESS', 0)
-      this.$store.commit('ADD_LOG', { msg: '发送至数猪大模型…', type: 'info' })
-      
+
+      const imageFiles = this.$store.state.imageFiles.length > 0 ? this.$store.state.imageFiles : [this.$store.state.imageFile]
+      this.$store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
+
       // 显示带进度的顶部提示栏
       this.showToastWithProgress('正在识别图片...', 'toast-info')
-      
+
       try {
-        const result = await analyzeImage(this.$store.state.imageFile, (p) => {
+        const result = await analyzeImage(imageFiles, (p) => {
           this.$store.commit('SET_PROGRESS', p)
           this.updateToastProgress(p)
         }, this.selectedFarmId)
-        this.$store.commit('SET_RESULT', result)
-        this.$store.commit('SET_PROGRESS', 100)
-        this.updateToastProgress(100)
-        
-        // 显示识别成功提示
-        setTimeout(() => {
-          this.showToastMessage(`识别完成：检测到 ${result.count} 头猪`, 'toast-success', 3000)
-        }, 500)
-        
-        this.$store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
-        this.$store.commit('ADD_LOG', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
+
+        // 处理批量结果
+        if (result.totalImages) {
+          this.$store.commit('SET_RESULTS', { results: result.results, totalPigs: result.totalPigs })
+          this.$store.commit('SET_PROGRESS', 100)
+          this.updateToastProgress(100)
+
+          // 显示识别成功提示
+          setTimeout(() => {
+            this.showToastMessage(`识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, 'toast-success', 3000)
+          }, 500)
+
+          this.$store.commit('ADD_LOG', { msg: `识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, type: 'success' })
+          result.results.forEach((r, index) => {
+            this.$store.commit('ADD_LOG', { msg: `图片 ${index + 1}：检测到 ${r.count} 头猪，置信度 ${Math.round(r.confidence * 100)}%，耗时 ${r.inferenceTime}ms`, type: 'success' })
+          })
+        } else {
+          // 处理单张结果
+          this.$store.commit('SET_RESULT', result)
+          this.$store.commit('SET_PROGRESS', 100)
+          this.updateToastProgress(100)
+
+          // 显示识别成功提示
+          setTimeout(() => {
+            this.showToastMessage(`识别完成：检测到 ${result.count} 头猪`, 'toast-success', 3000)
+          }, 500)
+
+          this.$store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+          this.$store.commit('ADD_LOG', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
+        }
+
         // 识别成功后刷新统计数据
         await this.loadDetectionStats()
       } catch (err) {
         this.$store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' })
         this.showToastMessage('识别失败：' + err.message, 'toast-error', 4000)
-      } finally { 
-        this.$store.commit('SET_ANALYZING', false) 
+      } finally {
+        this.$store.commit('SET_ANALYZING', false)
         // 延迟关闭提示栏，让用户看到完成状态
         setTimeout(() => this.closeToast(), 1000)
       }
@@ -780,6 +998,11 @@ export default {
         if (response.success) {
           this.farms = response.data
           this.$store.commit('ADD_LOG', { msg: `已加载 ${this.farms.length} 个猪场`, type: 'info' })
+
+          // 检查是否没有养殖场，第一次使用时提示
+          if (this.farms.length === 0) {
+            this.showToastMessage('第一次使用请先创建养殖场！', 'toast-info', 5000)
+          }
         }
       } catch (err) {
         this.$store.commit('ADD_LOG', { msg: '加载猪场列表失败：' + err.message, type: 'error' })
@@ -1007,6 +1230,21 @@ body {
   overflow: hidden
 }
 
+/* 图片卡片动画 */
+.img-card {
+  animation: sectionIn 0.3s var(--ease-out) 0.4s both;
+}
+
+/* 结果卡片动画 */
+.result-img-card {
+  animation: sectionIn 0.3s var(--ease-out) 0.5s both;
+}
+
+/* 检测明细卡片动画 */
+.detail-card {
+  animation: sectionIn 0.3s var(--ease-out) 0.6s both;
+}
+
 .glass-card:hover {
   box-shadow: var(--glass-hover)
 }
@@ -1018,7 +1256,13 @@ body {
   background: rgba(242, 242, 247, 0.85);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid var(--sep)
+  border-bottom: 1px solid var(--sep);
+  transition: opacity 0.3s ease;
+}
+
+.topbar--scrolled {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .topbar-inner {
@@ -1105,6 +1349,176 @@ body {
 .brand-sub {
   font-size: 12px;
   color: var(--text-3)
+}
+
+.capsule-nav {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+}
+
+.capsule-inner {
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 100px;
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.12), 0 1px 6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+.capsule-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.capsule-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text);
+}
+
+.capsule-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--sep);
+  flex-shrink: 0;
+}
+
+.capsule-farm-wrap {
+  position: relative;
+}
+.capsule-farm-wrap .farm-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  /* 固定最小宽度，撑开到与原版一致 */
+  min-width: 200px;
+  width: max-content;
+  /* 重置被胶囊容器继承的属性 */
+  white-space: normal;
+  font-size: 13px;
+  font-weight: 400;
+  /* 确保层级高于其他胶囊元素 */
+  z-index: 1100;
+}
+
+.capsule-farm-wrap .farm-dropdown-item {
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.capsule-farm-wrap .farm-dropdown-item-icon {
+  font-size: 18px;
+}
+
+.capsule-farm-wrap .farm-dropdown-item-text {
+  font-size: 13px;
+}
+
+.capsule-farm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 20px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.capsule-farm:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.capsule-btn-ghost {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: rgba(0, 0, 0, 0.04);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+}
+
+.capsule-btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.capsule-btn-clear:hover {
+  background: rgba(255, 59, 48, 0.08);
+  color: var(--red);
+}
+
+.capsule-btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--blue);
+  color: white;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 122, 255, 0.35);
+  transition: all 0.2s ease;
+}
+
+.capsule-btn-primary:hover:not(:disabled) {
+  background: #0071f3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 122, 255, 0.45);
+}
+
+.capsule-btn-primary:disabled {
+  background: var(--sep-opaque);
+  color: var(--text-4);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* 入场动画 */
+.capsule-drop-enter-active {
+  transition: transform 0.5s cubic-bezier(0.34, 1.35, 0.64, 1), opacity 0.3s ease;
+}
+
+.capsule-drop-leave-active {
+  transition: transform 0.28s ease, opacity 0.22s ease;
+}
+
+.capsule-drop-enter-from,
+.capsule-drop-leave-to {
+  transform: translateX(-50%) translateY(-64px);
+  opacity: 0;
+}
+
+.capsule-drop-enter-to,
+.capsule-drop-leave-from {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
 }
 
 .service-pill {
@@ -1281,8 +1695,15 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1 }
-  50% { opacity: 0.6 }
+
+  0%,
+  100% {
+    opacity: 1
+  }
+
+  50% {
+    opacity: 0.6
+  }
 }
 
 .btn-primary-inner {
@@ -1395,7 +1816,7 @@ body {
 .stat-card {
   padding: 20px 22px;
   cursor: default;
-  animation: cardReveal 0.5s var(--ease-out) var(--delay, 0ms) both
+  animation: cardReveal 0.3s var(--ease-out) calc(0.3s + var(--delay, 0ms)) both
 }
 
 @keyframes cardReveal {
@@ -1529,6 +1950,12 @@ body {
   gap: 8px
 }
 
+.img-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .traffic-dot {
   width: 10px;
   height: 10px;
@@ -1569,6 +1996,16 @@ body {
   white-space: nowrap
 }
 
+.img-card-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
 .chip-green {
   background: rgba(52, 199, 89, 0.1);
   border-color: rgba(52, 199, 89, 0.25);
@@ -1577,6 +2014,63 @@ body {
 
 .img-card-body {
   padding: 14px
+}
+
+/* 图片导航 */
+.img-navigation {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--sep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.nav-btn:hover {
+  background: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.nav-btn svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
+}
+
+/* 当次识别总数卡片 */
+.stat-card--total {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-card--total .stat-icon {
+  font-size: 24px;
+}
+
+.stat-card--total .stat-num {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.stat-card--total .stat-card-border {
+  border-color: rgba(52, 199, 89, 0.2);
 }
 
 .dropzone {
@@ -1934,7 +2428,20 @@ body {
   display: flex;
   flex-direction: column;
   padding: 20px 24px;
-  width: 100%
+  width: 100%;
+  animation: sectionIn 0.3s var(--ease-out) 0.1s both;
+}
+
+@keyframes sectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .farm-info-card--warning {
@@ -2021,7 +2528,8 @@ body {
   padding: 20px 24px;
   width: 100%;
   display: flex;
-  flex-direction: column
+  flex-direction: column;
+  animation: sectionIn 0.3s var(--ease-out) 0.2s both;
 }
 
 .system-stats-header {
@@ -2774,6 +3282,7 @@ body {
     transform: translateY(-8px) scale(0.96);
     transform-origin: top center
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1)
@@ -3055,13 +3564,15 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg) }
+  to {
+    transform: rotate(360deg)
+  }
 }
 
 /* ========== 顶部提示栏样式 ========== */
 .toast-bar {
   position: fixed;
-  top: 20px;
+  top: 70px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 9999;
@@ -3177,17 +3688,19 @@ body {
 /* 动画效果 */
 .toast-slide-enter-active,
 .toast-slide-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .toast-slide-enter-from {
-  transform: translateX(-50%) translateY(-20px);
+  transform: translateX(-50%) translateY(-30px) scale(0.9);
   opacity: 0;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
 }
 
 .toast-slide-leave-to {
-  transform: translateX(-50%) translateY(-20px);
+  transform: translateX(-50%) translateY(-30px) scale(0.9);
   opacity: 0;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
 }
 
 @media (max-width: 768px) {
@@ -3198,11 +3711,11 @@ body {
     max-width: none;
     min-width: 0;
   }
-  
+
   .toast-message {
     font-size: 13px;
   }
-  
+
   .toast-progress {
     width: 40px;
   }

@@ -47,12 +47,5 @@ CREATE TABLE `pig_farms`  (
   UNIQUE INDEX `name`(`name` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
--- ----------------------------
--- Records of pig_farms
--- ----------------------------
-INSERT INTO `pig_farms` VALUES (2, '养殖场B', '2026-04-03 23:31:07');
-INSERT INTO `pig_farms` VALUES (3, '养殖场C', '2026-04-03 23:31:07');
-INSERT INTO `pig_farms` VALUES (4, '小香猪场', '2026-04-04 00:52:30');
-INSERT INTO `pig_farms` VALUES (5, '新农养殖场', '2026-04-04 20:31:52');
 
 SET FOREIGN_KEY_CHECKS = 1;

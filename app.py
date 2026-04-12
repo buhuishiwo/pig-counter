@@ -30,7 +30,7 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", "CXH&cw9999"),
+    "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME", "pig_counter"),
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
@@ -71,6 +71,13 @@ class PredictResponse(BaseModel):
     detections: list[DetectionBox]
     processing_time_ms: float
     annotated_image: str
+
+
+class BatchPredictResponse(BaseModel):
+    success: bool
+    total_images: int
+    total_pigs: int
+    results: list[PredictResponse]
 
 
 def resolve_model_path() -> Path:
@@ -289,6 +296,31 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# 添加异常处理器，处理请求体大小超过限制的错误
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    if exc.status_code == 413:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "图片大小超过单次最大上传值！"}
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+
+# 处理请求验证错误
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}  # 👈 保留原始错误
+    )
+
 # app.add_middleware(
 #     CORSMiddleware,
 #     allow_origins=["*"],
@@ -327,7 +359,6 @@ async def startup_event() -> None:
 async def root() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
-
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     model_path = resolve_model_path()
@@ -351,16 +382,20 @@ async def config() -> dict[str, Any]:
     }
 
 
-@app.post("/api/predict", response_model=PredictResponse)
-async def predict(
-    file: UploadFile = File(...),
+@app.post("/api/predict-batch", response_model=BatchPredictResponse)
+async def predict_batch(
+    files: list[UploadFile] = File(...),
     farm_id: int | None = Form(default=None),
     conf_threshold: float = Form(default=0.25),
     iou_threshold: float = Form(default=0.45),
     imgsz: int = Form(default=960),
-) -> PredictResponse:
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="只支持图片文件")
+) -> BatchPredictResponse:
+    if not files:
+        raise HTTPException(status_code=400, detail="至少需要上传一张图片")
+
+    for file in files:
+        if file.content_type and not file.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"文件 {file.filename} 不是图片文件")
 
     if not 0 <= conf_threshold <= 1:
         raise HTTPException(status_code=400, detail="conf_threshold 必须在 0 到 1 之间")
@@ -370,26 +405,39 @@ async def predict(
         raise HTTPException(status_code=400, detail="imgsz 必须大于 0")
 
     model_path = resolve_model_path()
+    results = []
+    total_pigs = 0
+
     try:
-        image_bytes = await file.read()
-        image = decode_image(image_bytes)
-        result, annotated_image = predict_image(
-            image=image,
-            model_path=model_path,
-            conf_threshold=conf_threshold,
-            iou_threshold=iou_threshold,
-            imgsz=imgsz,
-        )
+        for file in files:
+            image_bytes = await file.read()
+            image = decode_image(image_bytes)
+            result, annotated_image = predict_image(
+                image=image,
+                model_path=model_path,
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+                imgsz=imgsz,
+            )
+            
+            # 保存识别记录到数据库
+            await save_detection_record(
+                farm_id=farm_id,
+                image_name=file.filename or "unknown.jpg",
+                predicted_count=result.predicted_count,
+                processing_time_ms=result.processing_time_ms,
+                annotated_image=annotated_image
+            )
+            
+            results.append(result)
+            total_pigs += result.predicted_count
         
-        await save_detection_record(
-            farm_id=farm_id,
-            image_name=file.filename or "unknown.jpg",
-            predicted_count=result.predicted_count,
-            processing_time_ms=result.processing_time_ms,
-            annotated_image=annotated_image
+        return BatchPredictResponse(
+            success=True,
+            total_images=len(files),
+            total_pigs=total_pigs,
+            results=results
         )
-        
-        return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
@@ -714,6 +762,166 @@ async def get_detection_records(
         ) from exc
 
 
+class DetectionRecordWithImageResponse(BaseModel):
+    id: int
+    farm_id: int | None
+    farm_name: str | None
+    image_name: str
+    predicted_count: int
+    processing_time_ms: float
+    annotated_image: str | None  # base64 缩略图
+    created_at: datetime
+ 
+ 
+class DetectionRecordWithImageListResponse(BaseModel):
+    success: bool
+    data: list[DetectionRecordWithImageResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+@app.get("/api/detection-records/with-images", response_model=DetectionRecordWithImageListResponse)
+async def get_detection_records_with_images(
+    farm_id: int | None = None,
+    page: int = 1,
+    page_size: int = 12,
+) -> DetectionRecordWithImageListResponse:
+
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    # 记录请求参数
+    logger.info(f"Received request to /api/detection-records/with-images with params: farm_id={farm_id}, page={page}, page_size={page_size}")
+    
+    # 验证参数
+    if page < 1:
+        logger.error(f"Invalid page parameter: {page}")
+        raise HTTPException(status_code=422, detail="page must be greater than 0")
+    if page_size < 1 or page_size > 50:
+        logger.error(f"Invalid page_size parameter: {page_size}")
+        raise HTTPException(status_code=422, detail="page_size must be between 1 and 50")
+    if farm_id is not None and not isinstance(farm_id, int):
+        logger.error(f"Invalid farm_id parameter type: {type(farm_id)}")
+        raise HTTPException(status_code=422, detail="farm_id must be an integer")
+    
+    logger.info(f"Parameters validated successfully")
+    page_size = min(page_size, 50)
+    try:
+        logger.info("Starting database operations")
+        with get_db() as conn:
+            logger.info("Database connection established")
+            with conn.cursor() as cursor:
+                where_clause = ""
+                params: list = []
+                if farm_id is not None:
+                    where_clause = "WHERE dr.farm_id = %s"
+                    params.append(farm_id)
+                    logger.info(f"Added farm_id filter: {farm_id}")
+
+                # 总数
+                count_sql = f"SELECT COUNT(*) AS total FROM detection_records dr {where_clause}"
+                logger.info(f"Executing count query: {count_sql} with params: {params}")
+                cursor.execute(count_sql, params)
+                total = cursor.fetchone()["total"]
+                logger.info(f"Total records found: {total}")
+
+                offset = (page - 1) * page_size
+                logger.info(f"Calculated offset: {offset}")
+                
+                select_sql = f"""
+                    SELECT
+                        dr.id, dr.farm_id, pf.name AS farm_name,
+                        dr.image_name, dr.predicted_count,
+                        dr.processing_time_ms, dr.annotated_image, dr.created_at
+                    FROM detection_records dr
+                    LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    {where_clause}
+                    ORDER BY dr.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                logger.info(f"Executing select query with params: {params + [page_size, offset]}")
+                cursor.execute(select_sql, params + [page_size, offset])
+                records = cursor.fetchall()
+                logger.info(f"Fetched {len(records)} records")
+
+                response_data = [
+                    DetectionRecordWithImageResponse(
+                        id=r["id"],
+                        farm_id=r["farm_id"],
+                        farm_name=r["farm_name"],
+                        image_name=r["image_name"],
+                        predicted_count=r["predicted_count"],
+                        processing_time_ms=r["processing_time_ms"],
+                        annotated_image=r["annotated_image"],
+                        created_at=r["created_at"],
+                    )
+                    for r in records
+                ]
+                
+                logger.info(f"Prepared response with {len(response_data)} items")
+                
+                return DetectionRecordWithImageListResponse(
+                    success=True,
+                    data=response_data,
+                    total=total,
+                    page=page,
+                    page_size=page_size,
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error in get_detection_records_with_images: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"获取识别记录失败: {exc}"
+        ) from exc
+
+
+@app.get("/api/detection-records/{record_id}", response_model=PredictResponse)
+async def get_detection_record_detail(record_id: int) -> PredictResponse:
+    """获取识别记录详细信息"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 查询记录
+                cursor.execute(
+                    """
+                    SELECT dr.id, dr.farm_id, dr.image_name, dr.predicted_count, 
+                           dr.processing_time_ms, dr.annotated_image
+                    FROM detection_records dr
+                    WHERE dr.id = %s
+                    """,
+                    (record_id,)
+                )
+                record = cursor.fetchone()
+                
+                if not record:
+                    raise HTTPException(status_code=404, detail="识别记录不存在")
+                
+                # 解析标注图片和检测结果
+                # 注意：这里我们没有存储原始的检测框数据，所以返回空数组
+                # 在实际应用中，你可能需要修改数据库结构，存储检测框数据
+                detections = []
+                
+                return PredictResponse(
+                    success=True,
+                    model_path=str(resolve_model_path()),
+                    image_width=0,  # 这里可以从存储的信息中获取，或者设为0
+                    image_height=0, # 这里可以从存储的信息中获取，或者设为0
+                    predicted_count=record["predicted_count"],
+                    detections=detections,
+                    processing_time_ms=record["processing_time_ms"],
+                    annotated_image=record["annotated_image"]
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取识别记录详情失败: {exc}"
+        ) from exc
+
+
 @app.get("/api/detection-stats", response_model=DetectionStatsResponse)
 async def get_detection_stats(
     farm_id: int | None = None
@@ -773,8 +981,153 @@ async def get_detection_stats(
             status_code=500, detail=f"获取统计数据失败: {exc}"
         ) from exc
 
+class FarmStatsItem(BaseModel):
+    farm_id: int | None
+    farm_name: str | None
+    total_images: int
+    total_pigs: int
+    today_images: int
+    today_pigs: int
+    avg_processing_time_ms: float
+    last_detection_at: datetime | None
+ 
+ 
+class FarmStatsListResponse(BaseModel):
+    success: bool
+    data: list[FarmStatsItem]
+ 
+ 
+@app.get("/api/detection-stats/by-farm", response_model=FarmStatsListResponse)
+async def get_stats_by_farm() -> FarmStatsListResponse:
+    """获取按猪场分组的识别统计数据（包含无猪场归属的记录）"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        dr.farm_id,
+                        pf.name AS farm_name,
+                        COUNT(*) AS total_images,
+                        COALESCE(SUM(dr.predicted_count), 0) AS total_pigs,
+                        SUM(DATE(dr.created_at) = CURDATE()) AS today_images,
+                        COALESCE(SUM(CASE WHEN DATE(dr.created_at) = CURDATE() THEN dr.predicted_count ELSE 0 END), 0) AS today_pigs,
+                        COALESCE(AVG(dr.processing_time_ms), 0) AS avg_processing_time_ms,
+                        MAX(dr.created_at) AS last_detection_at
+                    FROM detection_records dr
+                    LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    GROUP BY dr.farm_id, pf.name
+                    ORDER BY total_images DESC
+                    """
+                )
+                rows = cursor.fetchall()
+ 
+                return FarmStatsListResponse(
+                    success=True,
+                    data=[
+                        FarmStatsItem(
+                            farm_id=r["farm_id"],
+                            farm_name=r["farm_name"],
+                            total_images=r["total_images"],
+                            total_pigs=int(r["total_pigs"]),
+                            today_images=int(r["today_images"] or 0),
+                            today_pigs=int(r["today_pigs"]),
+                            avg_processing_time_ms=round(float(r["avg_processing_time_ms"]), 2),
+                            last_detection_at=r["last_detection_at"],
+                        )
+                        for r in rows
+                    ],
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取猪场统计数据失败: {exc}"
+        ) from exc
+
+
+class TimeSeriesDataItem(BaseModel):
+    date: str
+    images: int
+    pigs: int
+
+
+class TimeSeriesResponse(BaseModel):
+    success: bool
+    data: list[TimeSeriesDataItem]
+    granularity: str
+
+
+@app.get("/api/detection-stats/time-series", response_model=TimeSeriesResponse)
+async def get_time_series_stats(
+    granularity: str = "day",  # day 或 month
+    farm_id: int | None = None,
+    days: int = 30
+) -> TimeSeriesResponse:
+    """获取按时间粒度统计的数据"""
+    try:
+        if granularity not in ["day", "month"]:
+            raise HTTPException(status_code=422, detail="granularity must be 'day' or 'month'")
+        
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 构建查询条件
+                where_clause = ""
+                params = []
+                if farm_id is not None:
+                    where_clause = "WHERE farm_id = %s"
+                    params.append(farm_id)
+                
+                # 根据粒度构建日期格式
+                if granularity == "day":
+                    date_format = "DATE(created_at)"
+                    time_condition = f"created_at >= DATE_SUB(NOW(), INTERVAL {days} DAY)"
+                else:  # month
+                    date_format = "DATE_FORMAT(created_at, '%%Y-%%m')"
+                    time_condition = f"created_at >= DATE_SUB(NOW(), INTERVAL {days} DAY)"
+                
+                # 构建完整的WHERE子句
+                if where_clause:
+                    where_clause = f"{where_clause} AND {time_condition}"
+                else:
+                    where_clause = f"WHERE {time_condition}"
+                
+                # 执行查询
+                cursor.execute(
+                    f"""
+                    SELECT
+                        {date_format} AS date,
+                        COUNT(*) AS images,
+                        COALESCE(SUM(predicted_count), 0) AS pigs
+                    FROM detection_records
+                    {where_clause}
+                    GROUP BY date
+                    ORDER BY date
+                    """,
+                    params
+                )
+                rows = cursor.fetchall()
+                
+                # 构建响应数据
+                data = [
+                    TimeSeriesDataItem(
+                        date=str(r["date"]),
+                        images=r["images"],
+                        pigs=int(r["pigs"])
+                    )
+                    for r in rows
+                ]
+                
+                return TimeSeriesResponse(
+                    success=True,
+                    data=data,
+                    granularity=granularity
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"获取时间序列数据失败: {exc}"
+        ) from exc
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("app:app", host=DEFAULT_HOST, port=DEFAULT_PORT, reload=False)
