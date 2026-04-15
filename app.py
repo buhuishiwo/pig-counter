@@ -321,30 +321,7 @@ async def validation_exception_handler(request, exc):
         content={"detail": exc.errors()}  # 👈 保留原始错误
     )
 
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
 
-# 添加中间件处理静态资源路由
-# @app.middleware("http")
-# async def static_files_middleware(request: Request, call_next):
-#     path = request.url.path
-#     # 处理静态资源请求
-#     if path.startswith("/css/") or path.startswith("/js/") or path.startswith("/icon/") or path == "/favicon.ico" or path == "/icon-32x32.png" or path == "/icon-48x48.png":
-#         # 重定向到 /static 路径
-#         return RedirectResponse(url="/static" + path)
-#     # 处理根路径
-#     elif path == "/":
-#         return FileResponse(STATIC_DIR / "index.html")
-#     # 其他请求正常处理
-#     response = await call_next(request)
-#     return response
-
-# app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 
 @app.on_event("startup")
@@ -355,9 +332,7 @@ async def startup_event() -> None:
     get_model(model_path)
 
 
-@app.get("/")
-async def root() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
