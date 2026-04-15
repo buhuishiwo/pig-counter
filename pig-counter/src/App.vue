@@ -659,7 +659,18 @@ export default {
   },
   watch: {
     pigCount(val) { if (val === null) { this.animatedCount = 0; return } this.animateNumber(val) },
-    hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) }
+    hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
+    '$route.path'(newPath) {
+      // 当路由切换到主页面，且autoAnalyze为true时，自动执行识别操作
+      if (newPath === '/' && this.$store.state.autoAnalyze) {
+        // 重置autoAnalyze标志
+        this.$store.commit('SET_AUTO_ANALYZE', false)
+        // 延迟执行，确保页面完全加载
+        setTimeout(() => {
+          this.runAnalysis()
+        }, 500)
+      }
+    }
   },
   created() { this.checkServiceHealth() },
   mounted() {
@@ -834,6 +845,15 @@ export default {
       this.clearCanvas()
     },
     async runAnalysis() {
+      // 检查是否在StatsPage页面
+      if (this.$route.path === '/stats') {
+        // 设置自动执行识别的标志
+        this.$store.commit('SET_AUTO_ANALYZE', true)
+        // 跳转到主页面
+        this.$router.push('/')
+        return
+      }
+
       if (!this.hasImage || this.isAnalyzing || !this.selectedFarmId) return
       if (!this.$store.state.serviceOnline) {
         this.$store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })

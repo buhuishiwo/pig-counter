@@ -18,6 +18,7 @@ export default new Vuex.Store({
     // 分析状态
     isAnalyzing:  false,
     uploadProgress: 0,
+    autoAnalyze: false,   // 是否自动执行分析
 
     // 结果
     result: null,         // { count, confidence, boxes, inferenceTime }（单张，保持兼容）
@@ -132,6 +133,9 @@ export default new Vuex.Store({
     },
     SET_SERVICE_STATUS(state, online) {
       state.serviceOnline = online
+    },
+    SET_AUTO_ANALYZE(state, val) {
+      state.autoAnalyze = val
     }
   },
 
