@@ -134,7 +134,7 @@
           <!-- 猪场选择 -->
           <div class="capsule-farm-wrap" ref="capsuleFarmWrap" @click="toggleFarmDropdown">
             <div class="capsule-farm">
-               🏠{{ currentFarmName === '未选择' ? '请选择猪场' : currentFarmName }}
+              🏠{{ currentFarmName === '未选择' ? '请选择猪场' : currentFarmName }}
               <!-- <span class="farm-select-arrow" :class="{ 'farm-select-arrow--open': showFarmDropdown }"></span> -->
             </div>
             <!-- 复用已有的下拉菜单逻辑 -->
@@ -349,6 +349,7 @@
             <div class="img-card-header-left">
               <span class="traffic-dot" :class="hasResult ? 'dot-green' : 'dot-gray'"></span>
               <span class="img-card-title">标注结果</span>
+              <span v-if="isEditMode" class="edit-mode-indicator">编辑中</span>
             </div>
             <div class="img-card-header-right">
               <transition name="meta-slide">
@@ -362,10 +363,11 @@
               </transition>
             </div>
           </div>
+
           <div class="img-card-body">
             <div class="result-zone" :class="{ 'result-zone--active': hasResult }">
-              <div class="canvas-wrap" v-if="hasImage" @click="openImagePreview"
-                :class="{ 'canvas-wrap--clickable': hasResult }">
+              <div class="canvas-wrap" v-if="hasImage" @click="!isEditMode && openImagePreview()"
+                :class="{ 'canvas-wrap--clickable': hasResult && !isEditMode, 'canvas-wrap--editable': isEditMode }">
                 <img :src="previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
                   @load="onResultImgLoad" />
                 <canvas ref="boxCanvas" class="box-canvas"></canvas>
@@ -428,9 +430,25 @@
               <div class="detail-pulse"></div>
               <span class="detail-title">检测明细</span>
             </div>
-            <div class="detail-pills">
-              <span class="detail-pill">共 {{ pigCount }} 头</span>
-              <span class="detail-pill" :class="confClass">置信度 {{ confidencePct }}%</span>
+            <div class="detail-actions">
+              <div class="detail-pills">
+                <span class="detail-pill">共 {{ pigCount }} 头</span>
+                <span class="detail-pill" :class="confClass">置信度 {{ confidencePct }}%</span>
+              </div>
+              <button class="btn-edit" @click="toggleEditMode" :disabled="!hasResult" title="编辑识别框">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                </svg>
+                编辑标注
+              </button>
+              <button class="btn-edit btn-edit--primary" @click="exportAnnotatedImage" :disabled="!hasResult" title="导出标注图片">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                导出图片
+              </button>
             </div>
           </div>
           <div class="table-scroll">
@@ -566,6 +584,82 @@
         </div>
       </div>
     </transition>
+
+    <!-- 编辑模态框 -->
+    <transition name="modal-fade">
+      <div v-if="showEditModal" class="edit-modal" @click="closeEditModal">
+        <div class="edit-backdrop"></div>
+        <div class="edit-container" @click.stop>
+          <div class="edit-header">
+            <div class="edit-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+              <span>编辑识别框</span>
+              <span class="edit-badge">{{ editBoxes.length }} 个框</span>
+            </div>
+            <div class="edit-actions">
+              <button class="btn-edit" @click="addBoxInModal" title="添加新框">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                添加框
+              </button>
+              <button class="btn-edit btn-edit--danger" @click="deleteBoxInModal" :disabled="editSelectedIndex === null" title="删除选中框">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                </svg>
+                删除框
+              </button>
+              <button class="btn-edit btn-edit--primary" @click="saveEditModal" title="保存修改">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                保存
+              </button>
+              <button class="preview-close" @click="closeEditModal" title="关闭">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="edit-canvas-container" ref="editCanvasContainer">
+            <img :src="previewUrl" class="edit-image" alt="编辑图片" ref="editImg" @load="onEditImgLoad" draggable="false" />
+            <canvas ref="editCanvas" class="edit-canvas" @mousedown="onEditCanvasMouseDown" @mousemove="onEditCanvasMouseMove" @mouseup="onEditCanvasMouseUp" @mouseleave="onEditCanvasMouseUp" @dblclick="onEditCanvasDblClick"></canvas>
+          </div>
+          <div class="edit-hint" v-if="editHint">
+            <span v-if="editHint === 'draw'">在图片上拖拽鼠标绘制新框</span>
+            <span v-else-if="editHint === 'select'">点击选择一个识别框</span>
+            <span v-else-if="editHint === 'selected'">已选中框 {{ editSelectedIndex + 1 }}，可删除或继续添加</span>
+          </div>
+
+          <!-- 保存确认对话框 -->
+          <transition name="modal-fade">
+            <div v-if="showSaveConfirmDialog" class="confirm-dialog-overlay" @click.self="cancelSaveConfirm">
+              <div class="confirm-dialog">
+                <div class="confirm-dialog-icon">⚠️</div>
+                <h3 class="confirm-dialog-title">高危操作确认</h3>
+                <p class="confirm-dialog-message">
+                  您即将更新数据库中存储的图片数据。<br>
+                  <strong>此操作不可逆</strong>，原图片数据将被永久覆盖。
+                </p>
+                <div class="confirm-dialog-hint">
+                  确定要继续吗？
+                </div>
+                <div class="confirm-dialog-actions">
+                  <button class="btn-cancel" @click="cancelSaveConfirm">取消</button>
+                  <button class="btn-confirm-danger" @click="confirmSave">确定更新</button>
+                </div>
+              </div>
+            </div>
+          </transition>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -574,7 +668,7 @@ import LogPanel from '@/components/LogPanel.vue'
 import { validateImage, fileToDataURL, getImageDimensions, formatFileSize } from '@/utils/imageUtils'
 import { analyzeImage, checkHealth } from '@/api/pigModel'
 import { getFarms, createFarm, updateFarm, deleteFarm } from '@/api/farmApi'
-import { getDetectionStats } from '@/api/detectionApi'
+import { getDetectionStats, updateDetectionRecord } from '@/api/detectionApi'
 
 export default {
   name: 'App',
@@ -587,6 +681,26 @@ export default {
       hoveredBox: null,
       animatedCount: 0,
       showImagePreview: false,
+      // 编辑模式相关
+      isEditMode: false,
+      selectedBoxIndex: null,
+      isDrawing: false,
+      drawStart: null,
+      drawEnd: null,
+      // 编辑模态框相关
+      showEditModal: false,
+      showSaveConfirmDialog: false,
+      editRecordId: null,
+      editBoxes: [],
+      editSelectedIndex: null,
+      editIsDrawing: false,
+      editDrawStart: null,
+      editDrawEnd: null,
+      editHint: 'select',
+      editDraggingCorner: null,
+      editDraggingBox: null,
+      editDragStartPos: null,
+      editDragBoxStart: null,
       // 猪场相关数据
       farms: [],
       selectedFarmId: null,
@@ -677,19 +791,64 @@ export default {
     window.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('keydown', this.onKeyDown)
     document.addEventListener('click', this.handleClickOutside)
+    window.addEventListener('keydown', this.handleDeleteKey)
 
     const scroller = document.querySelector('.page-wrap') // 或其他容器
     this._scroller = scroller || window
     this._scroller.addEventListener('scroll', this.onScroll)
     window.addEventListener('scroll', this.onScroll)
+
+    // 添加canvas事件监听
+    this.$nextTick(() => {
+      this.setupCanvasEvents()
+    })
+
+    // 注册全局函数供其他组件调用（如StatsPage）
+    window.__app__ = {
+      openEditModal: (record) => {
+        console.log('[DEBUG] window.__app__.openEditModal called with record:', record)
+        if (record) {
+          this.editRecordId = record.id || null
+          console.log('[DEBUG] editRecordId set to:', this.editRecordId)
+          this.openEditModalWithData({
+            imageUrl: record.annotated_image || record.image_url,
+            boxes: record.boxes || [],
+            count: record.predicted_count || 0,
+            recordId: record.id
+          })
+        } else {
+          console.error('[DEBUG] No record provided to openEditModal')
+        }
+      }
+    }
   },
   beforeDestroy() {
     window.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('keydown', this.onKeyDown)
     document.removeEventListener('click', this.handleClickOutside)
+    window.removeEventListener('keydown', this.handleDeleteKey)
     this._scroller.removeEventListener('scroll', this.onScroll)
+    this.removeCanvasEvents()
   },
   methods: {
+    setupCanvasEvents() {
+      const canvas = this.$refs.boxCanvas
+      if (canvas) {
+        canvas.addEventListener('mousedown', this.onCanvasMouseDown)
+        canvas.addEventListener('mousemove', this.onCanvasMouseMove)
+        canvas.addEventListener('mouseup', this.onCanvasMouseUp)
+        canvas.addEventListener('mouseleave', this.onCanvasMouseUp)
+      }
+    },
+    removeCanvasEvents() {
+      const canvas = this.$refs.boxCanvas
+      if (canvas) {
+        canvas.removeEventListener('mousedown', this.onCanvasMouseDown)
+        canvas.removeEventListener('mousemove', this.onCanvasMouseMove)
+        canvas.removeEventListener('mouseup', this.onCanvasMouseUp)
+        canvas.removeEventListener('mouseleave', this.onCanvasMouseUp)
+      }
+    },
     onScroll() {
       this.scrolled = window.scrollY > 80
     },
@@ -919,43 +1078,92 @@ export default {
       }
     },
     onResultImgLoad() { if (this.hasResult) this.drawBoxesAnimated() },
+    //绘制数字序号和识别框
     drawBoxesAnimated() {
       const canvas = this.$refs.boxCanvas
       const img = this.$refs.baseImg
       if (!canvas || !img || !this.hasResult) return
+
       const boxes = this.result && this.result.boxes ? this.result.boxes : []
-      canvas.width = img.clientWidth; canvas.height = img.clientHeight
+      canvas.width = img.clientWidth
+      canvas.height = img.clientHeight
       const ctx = canvas.getContext('2d')
-      let prog = 0; const total = 60
-      const draw = () => {
-        prog++
-        const t = Math.min(prog / total, 1)
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        boxes.forEach((box, i) => {
-          const bd = i / boxes.length * 0.4
-          const lt = Math.max(0, Math.min(1, (t - bd) / 0.6))
-          if (lt <= 0) return
-          const c = this.resolveCoords(box, canvas)
-          const w = c.x2 - c.x1; const h = c.y2 - c.y1
-          const isH = this.hoveredBox === i
-          const col = isH ? 'rgba(255,149,0,' + lt + ')' : 'rgba(52,199,89,' + lt + ')'
-          ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = isH ? 2.5 : 1.8
-          ctx.shadowColor = col; ctx.shadowBlur = isH ? 10 : 5; ctx.globalAlpha = lt
-          ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
-          if (lt > 0.6) {
-            const la = (lt - 0.6) / 0.4
-            ctx.save(); ctx.globalAlpha = la
-            const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
-            ctx.font = 'bold 11px -apple-system,monospace'
-            const tw = ctx.measureText(label).width
-            ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
-            ctx.beginPath(); ctx.roundRect(c.x1, c.y1 - 22, tw + 12, 20, 4); ctx.fill()
-            ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, c.y1 - 7); ctx.restore()
-          }
-        })
-        if (prog < total) requestAnimationFrame(draw)
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      boxes.forEach((box, i) => {
+        // 解析坐标 → 画布坐标
+        const c = this.resolveCoords(box, canvas)
+        const cx = (c.x1 + c.x2) / 2
+        const cy = (c.y1 + c.y2) / 2
+        const width = c.x2 - c.x1
+        const height = c.y2 - c.y1
+
+        // 编辑模式下显示识别框
+        if (this.isEditMode) {
+          // 判断是否选中
+          const isSelected = this.selectedBoxIndex === i
+          
+          // 绘制识别框
+          ctx.strokeStyle = isSelected ? '#ff3b30' : '#007aff'
+          ctx.lineWidth = isSelected ? 3 : 2
+          ctx.setLineDash(isSelected ? [5, 5] : [])
+          ctx.strokeRect(c.x1, c.y1, width, height)
+          ctx.setLineDash([])
+
+          // 绘制角落标记
+          const cornerSize = 10
+          ctx.fillStyle = isSelected ? '#ff3b30' : '#007aff'
+          // 左上角
+          ctx.fillRect(c.x1 - 1, c.y1 - 1, cornerSize, 3)
+          ctx.fillRect(c.x1 - 1, c.y1 - 1, 3, cornerSize)
+          // 右上角
+          ctx.fillRect(c.x2 - cornerSize + 1, c.y1 - 1, cornerSize, 3)
+          ctx.fillRect(c.x2 - 1, c.y1 - 1, 3, cornerSize)
+          // 左下角
+          ctx.fillRect(c.x1 - 1, c.y2 - 1, cornerSize, 3)
+          ctx.fillRect(c.x1 - 1, c.y2 - cornerSize + 1, 3, cornerSize)
+          // 右下角
+          ctx.fillRect(c.x2 - cornerSize + 1, c.y2 - 1, cornerSize, 3)
+          ctx.fillRect(c.x2 - 1, c.y2 - cornerSize + 1, 3, cornerSize)
+        }
+
+        // 显示黑色序号文字（居中）
+        const label = String(i + 1)
+        const fontSize = this.isEditMode ? 20 : 24
+        ctx.font = `bold ${fontSize}px -apple-system, "SF Pro Display", sans-serif`
+        
+        // 编辑模式下选中的框显示红色文字
+        if (this.isEditMode && this.selectedBoxIndex === i) {
+          ctx.fillStyle = '#ff3b30'
+        } else {
+          ctx.fillStyle = '#000000'
+        }
+        
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, cx, cy)
+      })
+
+      // 绘制正在绘制的临时框
+      if (this.isDrawing && this.drawStart && this.drawEnd) {
+        const x1 = Math.min(this.drawStart.x, this.drawEnd.x)
+        const y1 = Math.min(this.drawStart.y, this.drawEnd.y)
+        const x2 = Math.max(this.drawStart.x, this.drawEnd.x)
+        const y2 = Math.max(this.drawStart.y, this.drawEnd.y)
+        const w = x2 - x1
+        const h = y2 - y1
+
+        ctx.strokeStyle = '#34c759'
+        ctx.lineWidth = 2
+        ctx.setLineDash([5, 5])
+        ctx.strokeRect(x1, y1, w, h)
+        ctx.setLineDash([])
+
+        // 绘制半透明填充
+        ctx.fillStyle = 'rgba(52, 199, 89, 0.2)'
+        ctx.fillRect(x1, y1, w, h)
       }
-      requestAnimationFrame(draw)
     },
     clearCanvas() { const c = this.$refs.boxCanvas; if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height) },
     resolveCoords(box, canvas) {
@@ -963,10 +1171,718 @@ export default {
       const sw = canvas.width; const sh = canvas.height
       const mw = (this.imageMeta && this.imageMeta.width) || 1
       const mh = (this.imageMeta && this.imageMeta.height) || 1
-      if (isN) return { x1: box.x1 * sw, y1: box.y1 * sh, x2: (box.x1 + box.x2) * sw, y2: (box.y1 + box.y2) * sh }
+      if (isN) {
+        // 归一化坐标：x1, y1 是左上角，x2, y2 是右下角坐标
+        return { x1: box.x1 * sw, y1: box.y1 * sh, x2: box.x2 * sw, y2: box.y2 * sh }
+      }
+      // 绝对坐标：x1, y1 是左上角，x2, y2 是右下角坐标
       return { x1: box.x1 / mw * sw, y1: box.y1 / mh * sh, x2: box.x2 / mw * sw, y2: box.y2 / mh * sh }
     },
-    onRowHover(i) { this.hoveredBox = i; this.$nextTick(() => this.drawBoxesAnimated()) },
+    onRowHover(i) { 
+      this.hoveredBox = i; 
+      if (!this.isEditMode) {
+        this.$nextTick(() => this.drawBoxesAnimated()) 
+      }
+    },
+    // 编辑模式相关方法
+    toggleEditMode() {
+      if (this.showEditModal) {
+        this.closeEditModal()
+      } else {
+        this.openEditModal()
+      }
+    },
+    openEditModal() {
+      if (!this.hasResult || !this.result || !this.result.boxes) return
+      this.editBoxes = JSON.parse(JSON.stringify(this.result.boxes))
+      this.editRecordId = this.result.recordId || null
+      console.log('[DEBUG] openEditModal set editRecordId:', this.editRecordId)
+      this.editSelectedIndex = null
+      this.editIsDrawing = false
+      this.editDrawStart = null
+      this.editDrawEnd = null
+      this.editHint = 'select'
+      this.showEditModal = true
+      this.$nextTick(() => {
+        if (this.$refs.editImg) {
+          this.onEditImgLoad()
+        }
+      })
+      this.$store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
+    },
+    openEditModalWithData(data) {
+      console.log('[DEBUG] openEditModalWithData called with data:', data)
+      if (!data || !data.imageUrl) {
+        const errorMsg = data?.recordId ? '编辑失败：数据库中未找到原始图片数据，请重新分析并保存该图片' : '编辑失败：缺少图片数据'
+        this.$store.commit('ADD_LOG', { msg: errorMsg, type: 'error' })
+        alert(errorMsg)
+        return
+      }
+      
+      // 设置编辑数据
+      this.editBoxes = data.boxes ? JSON.parse(JSON.stringify(data.boxes)) : []
+      this.editRecordId = data.recordId || null
+      console.log('[DEBUG] editRecordId after set:', this.editRecordId)
+      console.log('[DEBUG] imageUrl:', data.imageUrl ? `data:image/*;base64,${data.imageUrl.substring(0, 50)}...` : null)
+      
+      // 先加载图片获取真实尺寸
+      const img = new Image()
+      const self = this
+      img.onload = function() {
+        // 设置 imageMeta
+        const meta = {
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          size: formatFileSize(img.src.length * 0.75),
+          name: '编辑图片'
+        }
+        
+        // previewUrl 是 computed 属性，需要通过 mutation 设置
+        self.$store.commit('SET_IMAGE', { file: null, previewUrl: data.imageUrl, meta })
+        console.log('[DEBUG] previewUrl after set:', self.$store.state.previewUrl ? `length:${self.$store.state.previewUrl.length}, startsWith:${self.$store.state.previewUrl.substring(0, 30)}` : 'null/undefined')
+        console.log('[DEBUG] imageMeta:', meta)
+        
+        // 设置临时result用于本地保存跟踪
+        self.result = {
+          boxes: self.editBoxes,
+          count: self.editBoxes.length,
+          imageUrl: data.imageUrl,
+          recordId: data.recordId
+        }
+        
+        // 如果有count但没有boxes，创建一个空boxes的提示
+        if (data.count && self.editBoxes.length === 0) {
+          self.$store.commit('ADD_LOG', { msg: `当前记录有 ${data.count} 个识别框但未找到详细坐标数据`, type: 'info' })
+        }
+        
+        self.editSelectedIndex = null
+        self.editIsDrawing = false
+        self.editDrawStart = null
+        self.editDrawEnd = null
+        self.editHint = 'select'
+        self.showEditModal = true
+        
+        self.$nextTick(() => {
+          if (self.$refs.editImg) {
+            self.onEditImgLoad()
+          }
+        })
+        self.$store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
+      }
+      
+      img.onerror = function() {
+        console.error('[DEBUG] Failed to load image for editing')
+        alert('加载图片失败，无法编辑')
+      }
+      
+      img.src = data.imageUrl
+    },
+    closeEditModal() {
+      this.showEditModal = false
+      this.editBoxes = []
+      this.editSelectedIndex = null
+      this.editHint = 'select'
+      this.$store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
+    },
+    onEditImgLoad() {
+      const canvas = this.$refs.editCanvas
+      const img = this.$refs.editImg
+      if (!canvas || !img) return
+      canvas.width = img.clientWidth
+      canvas.height = img.clientHeight
+      this.drawEditCanvas()
+    },
+    drawEditCanvas() {
+      const canvas = this.$refs.editCanvas
+      const img = this.$refs.editImg
+      if (!canvas || !img) return
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      const cornerSize = 16
+      this.editBoxes.forEach((box, i) => {
+        const c = this.resolveCoordsToCanvas(box)
+        const cx = (c.x1 + c.x2) / 2
+        const cy = (c.y1 + c.y2) / 2
+        const width = c.x2 - c.x1
+        const height = c.y2 - c.y1
+        const isSelected = i === this.editSelectedIndex
+        const isDragging = this.editDraggingCorner && this.editDraggingCorner.boxIndex === i
+        if (isSelected || isDragging) {
+          ctx.strokeStyle = '#ff3b30'
+          ctx.lineWidth = 3
+          ctx.fillStyle = 'rgba(255, 59, 48, 0.15)'
+        } else {
+          ctx.strokeStyle = '#34c759'
+          ctx.lineWidth = 2
+          ctx.fillStyle = 'rgba(52, 199, 89, 0.1)'
+        }
+        ctx.fillRect(c.x1, c.y1, width, height)
+        ctx.strokeRect(c.x1, c.y1, width, height)
+        const cornerColor = isSelected ? '#ff3b30' : '#34c759'
+        ctx.fillStyle = cornerColor
+        ctx.fillRect(c.x1 - 2, c.y1 - 2, cornerSize, cornerSize)
+        ctx.fillRect(c.x2 - cornerSize + 2, c.y1 - 2, cornerSize, cornerSize)
+        ctx.fillRect(c.x1 - 2, c.y2 - cornerSize + 2, cornerSize, cornerSize)
+        ctx.fillRect(c.x2 - cornerSize + 2, c.y2 - cornerSize + 2, cornerSize, cornerSize)
+        ctx.strokeStyle = 'white'
+        ctx.lineWidth = 2
+        ctx.strokeRect(c.x1 - 2, c.y1 - 2, cornerSize, cornerSize)
+        ctx.strokeRect(c.x2 - cornerSize + 2, c.y1 - 2, cornerSize, cornerSize)
+        ctx.strokeRect(c.x1 - 2, c.y2 - cornerSize + 2, cornerSize, cornerSize)
+        ctx.strokeRect(c.x2 - cornerSize + 2, c.y2 - cornerSize + 2, cornerSize, cornerSize)
+        const label = String(i + 1)
+        ctx.font = `bold 20px -apple-system, "SF Pro Display", sans-serif`
+        ctx.fillStyle = isSelected ? '#ff3b30' : '#000000'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, cx, cy)
+      })
+      if (this.editIsDrawing && this.editDrawStart && this.editDrawEnd) {
+        const x1 = Math.min(this.editDrawStart.x, this.editDrawEnd.x)
+        const y1 = Math.min(this.editDrawStart.y, this.editDrawEnd.y)
+        const x2 = Math.max(this.editDrawStart.x, this.editDrawEnd.x)
+        const y2 = Math.max(this.editDrawStart.y, this.editDrawEnd.y)
+        const w = x2 - x1
+        const h = y2 - y1
+        ctx.strokeStyle = '#007aff'
+        ctx.lineWidth = 2
+        ctx.setLineDash([5, 5])
+        ctx.strokeRect(x1, y1, w, h)
+        ctx.setLineDash([])
+        ctx.fillStyle = 'rgba(0, 122, 255, 0.2)'
+        ctx.fillRect(x1, y1, w, h)
+      }
+    },
+    resolveCoordsToCanvas(box) {
+      const canvas = this.$refs.editCanvas
+      if (!canvas) return { x1: 0, y1: 0, x2: 0, y2: 0 }
+      const isN = box.x1 <= 1 && box.y1 <= 1
+      const sw = canvas.width
+      const sh = canvas.height
+      if (isN) {
+        return { x1: box.x1 * sw, y1: box.y1 * sh, x2: box.x2 * sw, y2: box.y2 * sh }
+      }
+      const mw = (this.imageMeta && this.imageMeta.width) || 1
+      const mh = (this.imageMeta && this.imageMeta.height) || 1
+      return { x1: box.x1 / mw * sw, y1: box.y1 / mh * sh, x2: box.x2 / mw * sw, y2: box.y2 / mh * sh }
+    },
+    getCornerAtPoint(box, x, y) {
+      const c = this.resolveCoordsToCanvas(box)
+      const hitRadius = 25
+      const corners = [
+        { name: 'tl', x: c.x1, y: c.y1 },
+        { name: 'tr', x: c.x2, y: c.y1 },
+        { name: 'bl', x: c.x1, y: c.y2 },
+        { name: 'br', x: c.x2, y: c.y2 }
+      ]
+      for (const corner of corners) {
+        const dx = x - corner.x
+        const dy = y - corner.y
+        if (Math.sqrt(dx * dx + dy * dy) <= hitRadius) {
+          return corner.name
+        }
+      }
+      return null
+    },
+    onEditCanvasMouseDown(e) {
+      const canvas = this.$refs.editCanvas
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      let clickedCorner = null
+      let clickedBoxIndex = null
+      for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+        const corner = this.getCornerAtPoint(this.editBoxes[i], x, y)
+        if (corner) {
+          clickedCorner = { boxIndex: i, corner: corner }
+          break
+        }
+      }
+      if (!clickedCorner) {
+        for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+          const c = this.resolveCoordsToCanvas(this.editBoxes[i])
+          if (x >= c.x1 && x <= c.x2 && y >= c.y1 && y <= c.y2) {
+            clickedBoxIndex = i
+            break
+          }
+        }
+      }
+      if (clickedCorner) {
+        this.editDraggingCorner = { boxIndex: clickedCorner.boxIndex, corner: clickedCorner.corner }
+        this.editDragStartPos = { x, y }
+        this.editSelectedIndex = clickedCorner.boxIndex
+        canvas.style.cursor = this.getCursorForCorner(clickedCorner.corner)
+        this.editHint = 'selected'
+      } else if (clickedBoxIndex !== null) {
+        this.editDraggingBox = clickedBoxIndex
+        this.editSelectedIndex = clickedBoxIndex
+        this.editDragStartPos = { x, y }
+        const box = this.editBoxes[clickedBoxIndex]
+        this.editDragBoxStart = { x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2 }
+        this.editHint = 'selected'
+        canvas.style.cursor = 'move'
+      } else {
+        this.editIsDrawing = true
+        this.editDrawStart = { x, y }
+        this.editDrawEnd = { x, y }
+        this.editHint = 'draw'
+      }
+      this.drawEditCanvas()
+    },
+    onEditCanvasDblClick(e) {
+      const canvas = this.$refs.editCanvas
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+        const c = this.resolveCoordsToCanvas(this.editBoxes[i])
+        if (x >= c.x1 && x <= c.x2 && y >= c.y1 && y <= c.y2) {
+          this.editSelectedIndex = i
+          this.deleteBoxInModal()
+          break
+        }
+      }
+    },
+    getCursorForCorner(corner) {
+      const cursors = {
+        tl: 'nwse-resize',
+        tr: 'nesw-resize',
+        bl: 'nesw-resize',
+        br: 'nwse-resize'
+      }
+      return cursors[corner] || 'crosshair'
+    },
+    onEditCanvasMouseMove(e) {
+      const canvas = this.$refs.editCanvas
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (this.editDraggingCorner && this.editDragStartPos) {
+        const { boxIndex, corner } = this.editDraggingCorner
+        const box = this.editBoxes[boxIndex]
+        if (!box) return
+        const dx = x - this.editDragStartPos.x
+        const dy = y - this.editDragStartPos.y
+        const canvasEl = this.$refs.editCanvas
+        const mw = (this.imageMeta && this.imageMeta.width) || canvasEl.width
+        const mh = (this.imageMeta && this.imageMeta.height) || canvasEl.height
+        const scaleX = mw / canvasEl.width
+        const scaleY = mh / canvasEl.height
+        if (corner === 'tl') {
+          box.x1 = Math.min(box.x1 + dx * scaleX, box.x2 - 10)
+          box.y1 = Math.min(box.y1 + dy * scaleY, box.y2 - 10)
+        } else if (corner === 'tr') {
+          box.x2 = Math.max(box.x2 + dx * scaleX, box.x1 + 10)
+          box.y1 = Math.min(box.y1 + dy * scaleY, box.y2 - 10)
+        } else if (corner === 'bl') {
+          box.x1 = Math.min(box.x1 + dx * scaleX, box.x2 - 10)
+          box.y2 = Math.max(box.y2 + dy * scaleY, box.y1 + 10)
+        } else if (corner === 'br') {
+          box.x2 = Math.max(box.x2 + dx * scaleX, box.x1 + 10)
+          box.y2 = Math.max(box.y2 + dy * scaleY, box.y1 + 10)
+        }
+        this.editDragStartPos = { x, y }
+        this.drawEditCanvas()
+        return
+      }
+      if (this.editDraggingBox !== null && this.editDragStartPos && this.editDragBoxStart) {
+        const box = this.editBoxes[this.editDraggingBox]
+        if (!box) return
+        const dx = x - this.editDragStartPos.x
+        const dy = y - this.editDragStartPos.y
+        const canvasEl = this.$refs.editCanvas
+        const mw = (this.imageMeta && this.imageMeta.width) || canvasEl.width
+        const mh = (this.imageMeta && this.imageMeta.height) || canvasEl.height
+        const scaleX = mw / canvasEl.width
+        const scaleY = mh / canvasEl.height
+        box.x1 = this.editDragBoxStart.x1 + dx * scaleX
+        box.y1 = this.editDragBoxStart.y1 + dy * scaleY
+        box.x2 = this.editDragBoxStart.x2 + dx * scaleX
+        box.y2 = this.editDragBoxStart.y2 + dy * scaleY
+        this.drawEditCanvas()
+        return
+      }
+      if (this.editIsDrawing && this.editDrawStart) {
+        this.editDrawEnd = { x, y }
+        this.drawEditCanvas()
+        return
+      }
+      let foundHover = null
+      for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+        const cornerName = this.getCornerAtPoint(this.editBoxes[i], x, y)
+        if (cornerName) {
+          foundHover = cornerName
+          this.editSelectedIndex = i
+          canvas.style.cursor = this.getCursorForCorner(cornerName)
+          break
+        }
+      }
+      if (!foundHover) {
+        for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+          const c = this.resolveCoordsToCanvas(this.editBoxes[i])
+          if (x >= c.x1 && x <= c.x2 && y >= c.y1 && y <= c.y2) {
+            this.editSelectedIndex = i
+            canvas.style.cursor = 'move'
+            foundHover = true
+            break
+          }
+        }
+      }
+      if (!foundHover) {
+        this.editSelectedIndex = null
+        canvas.style.cursor = 'crosshair'
+      }
+      this.drawEditCanvas()
+    },
+    onEditCanvasMouseUp() {
+      if (this.editDraggingCorner) {
+        this.editDraggingCorner = null
+        this.editDragStartPos = null
+        const canvas = this.$refs.editCanvas
+        if (canvas) canvas.style.cursor = 'crosshair'
+        return
+      }
+      if (this.editDraggingBox !== null) {
+        this.editDraggingBox = null
+        this.editDragStartPos = null
+        this.editDragBoxStart = null
+        return
+      }
+      if (this.editIsDrawing && this.editDrawStart && this.editDrawEnd) {
+        const x1 = Math.min(this.editDrawStart.x, this.editDrawEnd.x)
+        const y1 = Math.min(this.editDrawStart.y, this.editDrawEnd.y)
+        const x2 = Math.max(this.editDrawStart.x, this.editDrawEnd.x)
+        const y2 = Math.max(this.editDrawStart.y, this.editDrawEnd.y)
+        const minSize = 20
+        if (x2 - x1 > minSize && y2 - y1 > minSize) {
+          const canvas = this.$refs.editCanvas
+          const mw = (this.imageMeta && this.imageMeta.width) || canvas.width
+          const mh = (this.imageMeta && this.imageMeta.height) || canvas.height
+          const newBox = {
+            x1: x1 / canvas.width * mw,
+            y1: y1 / canvas.height * mh,
+            x2: x2 / canvas.width * mw,
+            y2: y2 / canvas.height * mh,
+            score: 0.95,
+            class_name: 'pig',
+            id: Date.now()
+          }
+          this.editBoxes.push(newBox)
+          this.editSelectedIndex = this.editBoxes.length - 1
+          this.editHint = 'selected'
+        }
+      }
+      this.editIsDrawing = false
+      this.editDrawStart = null
+      this.editDrawEnd = null
+      this.drawEditCanvas()
+    },
+    addBoxInModal() {
+      this.editSelectedIndex = null
+      this.editHint = 'draw'
+      this.$store.commit('ADD_LOG', { msg: '请在图片上拖拽绘制新框', type: 'info' })
+    },
+    deleteBoxInModal() {
+      if (this.editSelectedIndex === null) return
+      this.editBoxes.splice(this.editSelectedIndex, 1)
+      this.editSelectedIndex = null
+      this.editHint = 'select'
+      this.drawEditCanvas()
+      this.$store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+    },
+    saveEditModal() {
+      this.showSaveConfirmDialog = true
+    },
+    cancelSaveConfirm() {
+      this.showSaveConfirmDialog = false
+    },
+    async confirmSave() {
+      console.log('[DEBUG] confirmSave called')
+      console.log('[DEBUG] editRecordId:', this.editRecordId)
+      console.log('[DEBUG] editBoxes.length:', this.editBoxes.length)
+      console.log('[DEBUG] this.result:', this.result)
+      
+      this.showSaveConfirmDialog = false
+      
+      // 使用editBoxes来保存（无论数据来源是哪里）
+      if (this.editBoxes.length > 0 || this.result) {
+        console.log('[DEBUG] Proceeding to save')
+        // 更新本地result（如果存在）
+        if (this.result) {
+          this.result.boxes = this.editBoxes
+          this.result.count = this.editBoxes.length
+          this.$store.commit('SET_RESULT', { ...this.result })
+        }
+        
+        // 生成带标注的图片
+        let annotatedImage = null
+        try {
+          annotatedImage = await this.generateAnnotatedImage()
+          console.log('[DEBUG] Annotated image generated, length:', annotatedImage?.length)
+        } catch (e) {
+          console.error('[DEBUG] 生成标注图片失败:', e)
+        }
+        
+        // 如果有 recordId，更新到数据库
+        if (this.editRecordId) {
+          console.log('[DEBUG] editRecordId exists, calling updateDetectionRecord with:', {
+            recordId: this.editRecordId,
+            data: {
+              annotated_image: annotatedImage ? '(base64 string)' : null,
+              predicted_count: this.editBoxes.length,
+              boxes: this.editBoxes
+            }
+          })
+          try {
+            await updateDetectionRecord(this.editRecordId, {
+              annotated_image: annotatedImage,
+              predicted_count: this.editBoxes.length,
+              boxes: this.editBoxes
+            })
+            console.log('[DEBUG] updateDetectionRecord succeeded')
+            this.$store.commit('ADD_LOG', { msg: `已保存修改到数据库，共 ${this.editBoxes.length} 个识别框`, type: 'success' })
+          } catch (e) {
+            console.error('[DEBUG] updateDetectionRecord failed:', e)
+            this.$store.commit('ADD_LOG', { msg: '保存到数据库失败：' + e.message, type: 'error' })
+          }
+        } else {
+          console.log('[DEBUG] No editRecordId, saving locally only')
+          this.$store.commit('ADD_LOG', { msg: `已保存修改，共 ${this.editBoxes.length} 个识别框（本地保存）`, type: 'success' })
+        }
+      }
+      
+      this.showEditModal = false
+      this.editRecordId = null
+      this.drawBoxesAnimated()
+    },
+    generateAnnotatedImage() {
+      return new Promise((resolve, reject) => {
+        if (!this.previewUrl) {
+          reject(new Error('缺少图片数据'))
+          return
+        }
+        
+        const img = new Image()
+        img.onload = () => {
+          const exportCanvas = document.createElement('canvas')
+          const naturalWidth = this.imageMeta?.width || img.width
+          const naturalHeight = this.imageMeta?.height || img.height
+          exportCanvas.width = naturalWidth
+          exportCanvas.height = naturalHeight
+          const ctx = exportCanvas.getContext('2d')
+          
+          ctx.drawImage(img, 0, 0, exportCanvas.width, exportCanvas.height)
+          
+          this.editBoxes.forEach((box, i) => {
+            const isN = box.x1 <= 1 && box.y1 <= 1
+            let x1, y1, x2, y2
+            
+            if (isN) {
+              x1 = box.x1 * exportCanvas.width
+              y1 = box.y1 * exportCanvas.height
+              x2 = (box.x1 + box.x2) * exportCanvas.width
+              y2 = (box.y1 + box.y2) * exportCanvas.height
+            } else {
+              x1 = box.x1
+              y1 = box.y1
+              x2 = box.x2
+              y2 = box.y2
+            }
+            
+            const width = x2 - x1
+            const cx = (x1 + x2) / 2
+            const cy = (y1 + y2) / 2
+            
+            // 只绘制数字，不绘制方框（与原始识别结果保持一致）
+            const label = String(i + 1)
+            const fontSize = Math.max(24, Math.min(64, width / 3))
+            ctx.font = `bold ${fontSize}px -apple-system, "SF Pro Display", sans-serif`
+            ctx.fillStyle = '#000000'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(label, cx, cy)
+          })
+          
+          resolve(exportCanvas.toDataURL('image/jpeg', 0.85))
+        }
+        
+        img.onerror = () => {
+          reject(new Error('图片加载失败'))
+        }
+        
+        img.src = this.previewUrl
+      })
+    },
+    // 鼠标按下事件 - 开始绘制或选择框
+    onCanvasMouseDown(e) {
+      if (!this.isEditMode || !this.hasResult) return
+      
+      const canvas = this.$refs.boxCanvas
+      const rect = canvas.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+
+      // 检查是否点击了某个已有的框
+      const boxes = this.result && this.result.boxes ? this.result.boxes : []
+      let clickedBoxIndex = null
+      
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const c = this.resolveCoords(boxes[i], canvas)
+        if (x >= c.x1 && x <= c.x2 && y >= c.y1 && y <= c.y2) {
+          clickedBoxIndex = i
+          break
+        }
+      }
+
+      if (clickedBoxIndex !== null) {
+        // 选中已有的框
+        this.selectedBoxIndex = clickedBoxIndex
+        this.drawBoxesAnimated()
+      } else {
+        // 开始绘制新框
+        this.isDrawing = true
+        this.drawStart = { x, y }
+        this.drawEnd = { x, y }
+      }
+    },
+    // 鼠标移动事件
+    onCanvasMouseMove(e) {
+      if (!this.isEditMode || !this.hasResult) return
+      
+      if (this.isDrawing && this.drawStart) {
+        const canvas = this.$refs.boxCanvas
+        const rect = canvas.getBoundingClientRect()
+        this.drawEnd = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        }
+        this.drawBoxesAnimated()
+      }
+    },
+    // 鼠标松开事件
+    onCanvasMouseUp() {
+      if (!this.isEditMode) return
+      
+      if (this.isDrawing && this.drawStart && this.drawEnd) {
+        // 完成绘制新框
+        const x1 = Math.min(this.drawStart.x, this.drawEnd.x)
+        const y1 = Math.min(this.drawStart.y, this.drawEnd.y)
+        const x2 = Math.max(this.drawStart.x, this.drawEnd.x)
+        const y2 = Math.max(this.drawStart.y, this.drawEnd.y)
+        const minSize = 20 // 最小框尺寸
+        
+        if (x2 - x1 > minSize && y2 - y1 > minSize) {
+          // 将画布坐标转换为原图坐标
+          const canvas = this.$refs.boxCanvas
+          const mw = (this.imageMeta && this.imageMeta.width) || 1
+          const mh = (this.imageMeta && this.imageMeta.height) || 1
+          
+          const newBox = {
+            x1: x1 / canvas.width * mw,
+            y1: y1 / canvas.height * mh,
+            x2: x2 / canvas.width * mw,
+            y2: y2 / canvas.height * mh,
+            score: 0.95,
+            class_name: 'pig',
+            id: Date.now()
+          }
+          
+          // 添加新框
+          if (this.result && this.result.boxes) {
+            this.result.boxes.push(newBox)
+            this.result.count = this.result.boxes.length
+          }
+          
+          // 更新store
+          this.$store.commit('SET_RESULT', { ...this.result })
+          this.$store.commit('ADD_LOG', { msg: '已添加新识别框', type: 'success' })
+        }
+      }
+      
+      this.isDrawing = false
+      this.drawStart = null
+      this.drawEnd = null
+      this.drawBoxesAnimated()
+    },
+    // 删除选中的框
+    deleteSelectedBox() {
+      if (!this.isEditMode || this.selectedBoxIndex === null) return
+      
+      if (this.result && this.result.boxes) {
+        this.result.boxes.splice(this.selectedBoxIndex, 1)
+        this.result.count = this.result.boxes.length
+        this.$store.commit('SET_RESULT', { ...this.result })
+        this.$store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+        this.selectedBoxIndex = null
+        this.drawBoxesAnimated()
+      }
+    },
+    // 按Delete键删除选中的框
+    handleDeleteKey(e) {
+      if (e.key === 'Delete' && this.isEditMode && this.selectedBoxIndex !== null) {
+        e.preventDefault()
+        this.deleteSelectedBox()
+      }
+    },
+    // 导出带数字标注的图片
+    exportAnnotatedImage() {
+      if (!this.hasResult) return
+      
+      const canvas = this.$refs.boxCanvas
+      const img = this.$refs.baseImg
+      
+      if (!canvas || !img) return
+      
+      // 创建一个新的canvas用于导出
+      const exportCanvas = document.createElement('canvas')
+      exportCanvas.width = img.naturalWidth
+      exportCanvas.height = img.naturalHeight
+      const ctx = exportCanvas.getContext('2d')
+      
+      // 先绘制原图
+      ctx.drawImage(img, 0, 0, exportCanvas.width, exportCanvas.height)
+      
+      // 绘制数字序号
+      const boxes = this.result && this.result.boxes ? this.result.boxes : []
+      boxes.forEach((box, i) => {
+        // 解析坐标（归一化坐标）
+        const isN = box.x1 <= 1 && box.y1 <= 1
+        let x1, y1, x2, y2
+        
+        if (isN) {
+          x1 = box.x1 * exportCanvas.width
+          y1 = box.y1 * exportCanvas.height
+          x2 = (box.x1 + box.x2) * exportCanvas.width
+          y2 = (box.y1 + box.y2) * exportCanvas.height
+        } else {
+          x1 = box.x1
+          y1 = box.y1
+          x2 = box.x2
+          y2 = box.y2
+        }
+        
+        const cx = (x1 + x2) / 2
+        const cy = (y1 + y2) / 2
+        
+        // 绘制数字
+        const label = String(i + 1)
+        const fontSize = Math.max(24, Math.min(48, (x2 - x1) / 3))
+        ctx.font = `bold ${fontSize}px -apple-system, "SF Pro Display", sans-serif`
+        ctx.fillStyle = '#000000'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, cx, cy)
+      })
+      
+      // 下载图片
+      const link = document.createElement('a')
+      link.download = `pig_count_${Date.now()}.png`
+      link.href = exportCanvas.toDataURL('image/png')
+      link.click()
+      
+      this.$store.commit('ADD_LOG', { msg: '已导出标注图片', type: 'success' })
+    },
     animateNumber(target) {
       const dur = 800; const start = Date.now()
       const tick = () => {
@@ -1418,6 +2334,7 @@ body {
 .capsule-farm-wrap {
   position: relative;
 }
+
 .capsule-farm-wrap .farm-dropdown {
   position: absolute;
   top: calc(100% + 10px);
@@ -2275,6 +3192,11 @@ body {
   pointer-events: none
 }
 
+.canvas-wrap--editable .box-canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
 .result-overlay {
   position: absolute;
   inset: 0;
@@ -2767,6 +3689,12 @@ body {
 .detail-pills {
   display: flex;
   gap: 6px
+}
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail-pill {
@@ -3739,5 +4667,311 @@ body {
   .toast-progress {
     width: 40px;
   }
+}
+
+/* ========== 编辑模式样式 ========== */
+.edit-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  margin-left: 8px;
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--red);
+  animation: pulse 1.5s infinite;
+}
+
+.edit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sep);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.btn-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--sep);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-2);
+}
+
+.btn-edit:hover {
+  background: white;
+  border-color: var(--text-3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.btn-edit--active {
+  background: rgba(0, 122, 255, 0.1);
+  border-color: rgba(0, 122, 255, 0.3);
+  color: var(--blue);
+}
+
+.btn-edit--active:hover {
+  background: rgba(0, 122, 255, 0.15);
+  border-color: rgba(0, 122, 255, 0.4);
+}
+
+.btn-edit--danger {
+  background: rgba(255, 59, 48, 0.08);
+  border-color: rgba(255, 59, 48, 0.2);
+  color: var(--red);
+}
+
+.btn-edit--danger:hover:not(:disabled) {
+  background: rgba(255, 59, 48, 0.15);
+  border-color: rgba(255, 59, 48, 0.4);
+}
+
+.btn-edit--danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--sep);
+  color: var(--text-4);
+}
+
+.btn-edit--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+}
+
+.btn-edit--primary:hover:not(:disabled) {
+  background: #0071f3;
+  border-color: #0071f3;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.35);
+}
+
+.canvas-wrap--editable {
+  cursor: crosshair;
+}
+
+.canvas-wrap--editable:hover {
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+  border-radius: 8px;
+}
+
+/* 编辑工具栏动画 */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* ========== 编辑模态框样式 ========== */
+.edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.edit-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.edit-container {
+  position: relative;
+  width: 90vw;
+  height: 85vh;
+  max-width: 1400px;
+  background: #1a1a1a;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+}
+
+.edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.edit-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.edit-badge {
+  padding: 3px 10px;
+  background: rgba(52, 199, 89, 0.2);
+  border: 1px solid rgba(52, 199, 89, 0.3);
+  border-radius: 12px;
+  font-size: 12px;
+  color: #34c759;
+  font-weight: 500;
+}
+
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.edit-canvas-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 20px;
+}
+
+.edit-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.edit-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.edit-hint {
+  padding: 12px 20px;
+  background: #2a2a2a;
+  border-top: 1px solid #3a3a3a;
+  text-align: center;
+  font-size: 13px;
+  color: #888;
+}
+
+.edit-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ========== 高危操作确认对话框 ========== */
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.confirm-dialog {
+  background: #1a1a1a;
+  border: 1px solid #ff3b30;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-dialog-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.confirm-dialog-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ff3b30;
+  margin: 0 0 16px 0;
+}
+
+.confirm-dialog-message {
+  font-size: 14px;
+  color: #ccc;
+  line-height: 1.6;
+  margin: 0 0 16px 0;
+}
+
+.confirm-dialog-message strong {
+  color: #ff3b30;
+}
+
+.confirm-dialog-hint {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 24px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.confirm-dialog-actions button {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel {
+  background: #3a3a3a;
+  border: 1px solid #555;
+  color: #fff;
+}
+
+.btn-cancel:hover {
+  background: #4a4a4a;
+}
+
+.btn-confirm-danger {
+  background: #ff3b30;
+  border: 1px solid #ff3b30;
+  color: #fff;
+}
+
+.btn-confirm-danger:hover {
+  background: #e6352b;
 }
 </style>

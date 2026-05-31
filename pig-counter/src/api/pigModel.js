@@ -171,7 +171,8 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null) {
         id: i
       })),
       annotatedImage: result.annotated_image || null,
-      inferenceTime: result.processing_time_ms ?? null
+      inferenceTime: result.processing_time_ms ?? null,
+      recordId: result.record_id || null
     }
   }
   
@@ -200,7 +201,8 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null) {
         })),
         annotatedImage: result.annotated_image || null,
         inferenceTime: result.processing_time_ms ?? null,
-        fileName: files[index].name
+        fileName: files[index].name,
+        recordId: result.record_id || null
       }
     })
   }

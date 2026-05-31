@@ -28,6 +28,7 @@ CREATE TABLE `detection_records`  (
   `predicted_count` int NOT NULL,
   `processing_time_ms` float NOT NULL,
   `annotated_image` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `boxes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '识别框坐标JSON数组',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_detection_records_farm_id`(`farm_id` ASC) USING BTREE,

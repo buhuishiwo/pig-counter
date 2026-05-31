@@ -71,6 +71,7 @@ class PredictResponse(BaseModel):
     detections: list[DetectionBox]
     processing_time_ms: float
     annotated_image: str
+    record_id: int | None = None
 
 
 class BatchPredictResponse(BaseModel):
@@ -129,25 +130,62 @@ def create_thumbnail(image: np.ndarray, max_size: int = 320, quality: int = 60) 
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def decode_base64_image(base64_str: str) -> np.ndarray:
+    """从 base64 字符串解码图片"""
+    if base64_str.startswith("data:image"):
+        base64_str = base64_str.split(",")[1]
+    img_data = base64.b64decode(base64_str)
+    np_arr = np.frombuffer(img_data, np.uint8)
+    return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+# 绘制检测结果到图片（仅绘制数字）
 def draw_detections(image: np.ndarray, detections: list[DetectionBox]) -> np.ndarray:
+    """
+    在识别结果图上，仅于每头猪中心位置绘制数字序号。
+    不绘制矩形框、圆形背景或边框。
+    """
     annotated = image.copy()
+
     for index, det in enumerate(detections, start=1):
-        x1, y1, x2, y2 = map(int, [det.x1, det.y1, det.x2, det.y2])
-        color = (30, 190, 110)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"pig #{index} {det.confidence:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-        top = max(y1 - th - 10, 0)
-        cv2.rectangle(annotated, (x1, top), (x1 + tw + 10, top + th + 10), color, -1)
+        # 计算检测框中心点
+        cx = int((det.x1 + det.x2) / 2)
+        cy = int((det.y1 + det.y2) / 2)
+
+        # 根据检测框大小自适应字号
+        box_short = min(det.x2 - det.x1, det.y2 - det.y1)
+
+        label = str(index)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        # 字号
+        font_scale = max(2.0, min(box_short / 35.0, 4.0))
+
+        # 字体粗细
+        thickness = max(3, int(font_scale * 2))
+
+        # 计算文字尺寸用于居中
+        (tw, th), baseline = cv2.getTextSize(
+            label,
+            font,
+            font_scale,
+            thickness
+        )
+
+        tx = cx - tw // 2
+        ty = cy + th // 2
+
+        # 直接绘制数字（黑色）
         cv2.putText(
             annotated,
             label,
-            (x1 + 5, top + th + 2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (20, 20, 20),
-            2,
+            (tx, ty),
+            font,
+            font_scale,
+            (0, 0, 0),   # 黑色数字
+            thickness,
+            cv2.LINE_AA,
         )
+
     return annotated
 
 
@@ -396,14 +434,17 @@ async def predict_batch(
             )
             
             # 保存识别记录到数据库
-            await save_detection_record(
+            record_id = await save_detection_record(
                 farm_id=farm_id,
                 image_name=file.filename or "unknown.jpg",
                 predicted_count=result.predicted_count,
                 processing_time_ms=result.processing_time_ms,
-                annotated_image=annotated_image
+                annotated_image=annotated_image,
+                detections=result.detections
             )
             
+            # 设置返回结果的 record_id（使用 Pydantic 的正确方式）
+            result = result.model_copy(update={"record_id": record_id})
             results.append(result)
             total_pigs += result.predicted_count
         
@@ -426,25 +467,44 @@ async def save_detection_record(
     image_name: str,
     predicted_count: int,
     processing_time_ms: float,
-    annotated_image: np.ndarray
-) -> None:
-    """保存识别记录到数据库（存储压缩缩略图）"""
+    annotated_image: np.ndarray,
+    detections: list[DetectionBox] | None = None
+) -> int | None:
+    """保存识别记录到数据库（存储压缩缩略图），返回插入的 record_id"""
     try:
         thumbnail_base64 = create_thumbnail(annotated_image, max_size=320, quality=60)
+        
+        # 转换 detections 为 boxes 格式（只需要坐标，不需要其他字段）
+        boxes_json = None
+        if detections:
+            import json
+            boxes = []
+            for det in detections:
+                boxes.append({
+                    "x1": float(det.x1),
+                    "y1": float(det.y1),
+                    "x2": float(det.x2),
+                    "y2": float(det.y2)
+                })
+            boxes_json = json.dumps(boxes)
+        
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO detection_records 
-                        (farm_id, image_name, predicted_count, processing_time_ms, annotated_image, created_at) 
-                        VALUES (%s, %s, %s, %s, %s, NOW())""",
-                    (farm_id, image_name, predicted_count, processing_time_ms, thumbnail_base64)
+                    (farm_id, image_name, predicted_count, processing_time_ms, annotated_image, boxes, created_at) 
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())""",
+                    (farm_id, image_name, predicted_count, processing_time_ms, thumbnail_base64, boxes_json)
                 )
                 conn.commit()
-                print(f"识别记录保存成功: farm_id={farm_id}, count={predicted_count}")
+                record_id = cursor.lastrowid
+                print(f"识别记录保存成功: farm_id={farm_id}, count={predicted_count}, record_id={record_id}")
+                return record_id
     except Exception as exc:
         print(f"保存识别记录失败: {exc}")
         import traceback
         traceback.print_exc()
+        return None
 
 
 # ============================================================
@@ -665,6 +725,8 @@ class DetectionRecordResponse(BaseModel):
     image_name: str
     predicted_count: int
     processing_time_ms: float
+    annotated_image: str | None
+    boxes: list | None
     created_at: datetime
 
 
@@ -672,6 +734,12 @@ class DetectionRecordListResponse(BaseModel):
     success: bool
     data: list[DetectionRecordResponse]
     total: int
+
+
+class UpdateDetectionRecordRequest(BaseModel):
+    annotated_image: str | None = None
+    predicted_count: int | None = None
+    boxes: list | None = None
 
 
 class DetectionStatsResponse(BaseModel):
@@ -701,11 +769,11 @@ async def get_detection_records(
                 cursor.execute(count_sql, params)
                 total = cursor.fetchone()["total"]
                 
-                # 查询记录
-                offset = (page - 1) * page_size
+                # 更新GET列表接口以包含annotated_image和boxes
                 sql = f"""
                     SELECT dr.id, dr.farm_id, pf.name as farm_name, dr.image_name,
-                           dr.predicted_count, dr.processing_time_ms, dr.created_at
+                           dr.predicted_count, dr.processing_time_ms, dr.annotated_image,
+                           dr.boxes, dr.created_at
                     FROM detection_records dr
                     LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
                     {where_clause}
@@ -714,6 +782,21 @@ async def get_detection_records(
                 """
                 cursor.execute(sql, params + [page_size, offset])
                 records = cursor.fetchall()
+                
+                # 解析boxes字段
+                import json
+                processed_records = []
+                for r in records:
+                    boxes = None
+                    if r["boxes"]:
+                        try:
+                            boxes = json.loads(r["boxes"])
+                        except:
+                            boxes = None
+                    processed_records.append({
+                        **r,
+                        "boxes": boxes
+                    })
                 
                 return DetectionRecordListResponse(
                     success=True,
@@ -725,9 +808,11 @@ async def get_detection_records(
                             image_name=r["image_name"],
                             predicted_count=r["predicted_count"],
                             processing_time_ms=r["processing_time_ms"],
+                            annotated_image=r["annotated_image"],
+                            boxes=r["boxes"],
                             created_at=r["created_at"]
                         )
-                        for r in records
+                        for r in processed_records
                     ],
                     total=total
                 )
@@ -745,6 +830,7 @@ class DetectionRecordWithImageResponse(BaseModel):
     predicted_count: int
     processing_time_ms: float
     annotated_image: str | None  # base64 缩略图
+    boxes: list | None  # 识别框坐标
     created_at: datetime
  
  
@@ -809,7 +895,7 @@ async def get_detection_records_with_images(
                     SELECT
                         dr.id, dr.farm_id, pf.name AS farm_name,
                         dr.image_name, dr.predicted_count,
-                        dr.processing_time_ms, dr.annotated_image, dr.created_at
+                        dr.processing_time_ms, dr.annotated_image, dr.boxes, dr.created_at
                     FROM detection_records dr
                     LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
                     {where_clause}
@@ -821,19 +907,29 @@ async def get_detection_records_with_images(
                 records = cursor.fetchall()
                 logger.info(f"Fetched {len(records)} records")
 
-                response_data = [
-                    DetectionRecordWithImageResponse(
-                        id=r["id"],
-                        farm_id=r["farm_id"],
-                        farm_name=r["farm_name"],
-                        image_name=r["image_name"],
-                        predicted_count=r["predicted_count"],
-                        processing_time_ms=r["processing_time_ms"],
-                        annotated_image=r["annotated_image"],
-                        created_at=r["created_at"],
+                # 解析boxes字段
+                import json
+                response_data = []
+                for r in records:
+                    boxes = None
+                    if r["boxes"]:
+                        try:
+                            boxes = json.loads(r["boxes"])
+                        except:
+                            boxes = None
+                    response_data.append(
+                        DetectionRecordWithImageResponse(
+                            id=r["id"],
+                            farm_id=r["farm_id"],
+                            farm_name=r["farm_name"],
+                            image_name=r["image_name"],
+                            predicted_count=r["predicted_count"],
+                            processing_time_ms=r["processing_time_ms"],
+                            annotated_image=r["annotated_image"],
+                            boxes=boxes,
+                            created_at=r["created_at"],
+                        )
                     )
-                    for r in records
-                ]
                 
                 logger.info(f"Prepared response with {len(response_data)} items")
                 
@@ -894,6 +990,92 @@ async def get_detection_record_detail(record_id: int) -> PredictResponse:
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"获取识别记录详情失败: {exc}"
+        ) from exc
+
+
+@app.put("/api/detection-records/{record_id}", response_model=DetectionRecordResponse)
+async def update_detection_record(
+    record_id: int,
+    update_data: UpdateDetectionRecordRequest
+) -> DetectionRecordResponse:
+    """更新识别记录（仅允许更新 annotated_image、predicted_count 和 boxes）"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                # 构建更新语句
+                updates = []
+                params = []
+                if update_data.annotated_image is not None:
+                    # 对 annotated_image 进行缩略图压缩
+                    img_array = decode_base64_image(update_data.annotated_image)
+                    thumbnail_base64 = create_thumbnail(img_array, max_size=320, quality=60)
+                    updates.append("annotated_image = %s")
+                    params.append(thumbnail_base64)
+                if update_data.predicted_count is not None:
+                    updates.append("predicted_count = %s")
+                    params.append(update_data.predicted_count)
+                if update_data.boxes is not None:
+                    updates.append("boxes = %s")
+                    # 将boxes列表转换为JSON字符串
+                    import json
+                    params.append(json.dumps(update_data.boxes))
+                
+                if not updates:
+                    raise HTTPException(status_code=400, detail="没有提供要更新的字段")
+                
+                params.append(record_id)
+                cursor.execute(
+                    f"""
+                    UPDATE detection_records
+                    SET {', '.join(updates)}
+                    WHERE id = %s
+                    """,
+                    params
+                )
+                conn.commit()
+                
+                if cursor.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="识别记录不存在")
+                
+                # 获取更新后的记录
+                cursor.execute(
+                    """
+                    SELECT dr.id, dr.farm_id, pf.name AS farm_name, dr.image_name,
+                           dr.predicted_count, dr.processing_time_ms, dr.annotated_image,
+                           dr.boxes, dr.created_at
+                    FROM detection_records dr
+                    LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    WHERE dr.id = %s
+                    """,
+                    (record_id,)
+                )
+                record = cursor.fetchone()
+                
+                # 解析boxes字段
+                boxes = None
+                if record["boxes"]:
+                    import json
+                    try:
+                        boxes = json.loads(record["boxes"])
+                    except:
+                        boxes = None
+                
+                return DetectionRecordResponse(
+                    id=record["id"],
+                    farm_id=record["farm_id"],
+                    farm_name=record["farm_name"],
+                    image_name=record["image_name"],
+                    predicted_count=record["predicted_count"],
+                    processing_time_ms=record["processing_time_ms"],
+                    annotated_image=record["annotated_image"],
+                    boxes=boxes,
+                    created_at=record["created_at"],
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"更新识别记录失败: {exc}"
         ) from exc
 
 

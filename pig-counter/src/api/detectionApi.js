@@ -37,3 +37,31 @@ export async function getDetectionStats(farm_id = null) {
   const response = await axios.get(`${BASE_URL}/detection-stats?${queryParams.toString()}`)
   return response.data
 }
+
+/**
+ * 更新识别记录（高危操作 - 会修改数据库中的图片数据）
+ * @param {number} recordId - 记录ID
+ * @param {Object} updateData - 更新数据
+ * @param {string} updateData.annotated_image - 标注后的图片（base64）
+ * @param {number} updateData.predicted_count - 预测的猪数量
+ * @returns {Promise<{success: boolean, data: Object}>}
+ */
+export async function updateDetectionRecord(recordId, updateData) {
+  console.log('[DEBUG] updateDetectionRecord API called with:', {
+    recordId,
+    updateData: {
+      ...updateData,
+      annotated_image: updateData.annotated_image ? '(base64 string)' : null
+    }
+  })
+  console.log('[DEBUG] Request URL:', `${BASE_URL}/detection-records/${recordId}`)
+  
+  try {
+    const response = await axios.put(`${BASE_URL}/detection-records/${recordId}`, updateData)
+    console.log('[DEBUG] updateDetectionRecord response:', response.data)
+    return response.data
+  } catch (error) {
+    console.error('[DEBUG] updateDetectionRecord error:', error.response?.data || error.message)
+    throw error
+  }
+}
