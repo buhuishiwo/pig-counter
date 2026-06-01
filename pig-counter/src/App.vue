@@ -105,6 +105,7 @@
         <ResultImageCard ref="resultCard"
           :hasImage="hasImage"
           :hasResult="hasResult"
+          :annotatedImage="annotatedImage"
           :previewUrl="previewUrl"
           :isAnalyzing="isAnalyzing"
           :result="result"
@@ -128,6 +129,8 @@
           @open-preview="openImagePreview"
           @prev="batchResults ? prevBatchImage() : prevImage()"
           @next="batchResults ? nextBatchImage() : nextImage()"
+          @edit="openEditModal"
+          @export="exportAnnotatedImage"
         />
       </div>
 
@@ -191,6 +194,69 @@
       @close="closeImagePreview"
     />
 
+    <!-- 编辑识别框模态框 -->
+    <transition name="modal-fade">
+      <div v-if="showEditModal" class="edit-modal" @click="closeEditModal">
+        <div class="edit-backdrop"></div>
+        <div class="edit-container" @click.stop>
+          <div class="edit-header">
+            <div class="edit-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+              <span>编辑识别框</span>
+            </div>
+            <div class="edit-tabs">
+              <button class="edit-tab" :class="{ 'edit-tab--active': editMode === 'add' }" @click="editMode = 'add'; editSelectedIndex = null; drawEditCanvas()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                新增
+              </button>
+              <button class="edit-tab" :class="{ 'edit-tab--active': editMode === 'delete' }" @click="editMode = 'delete'; editSelectedIndex = null; drawEditCanvas()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                删除
+              </button>
+            </div>
+            <div class="edit-actions">
+              <button class="edit-btn edit-btn--primary" @click="saveBoxesToDb" :disabled="!editRecordId">保存</button>
+              <button class="edit-close-btn" @click="closeEditModal" title="关闭">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="edit-body">
+            <div class="edit-info">
+              <span class="edit-pill">当前 {{ editBoxes.length }} 个识别框</span>
+              <span class="edit-pill edit-pill--mode" v-if="editMode === 'add'">新增模式：拖拽绘制新框</span>
+              <span class="edit-pill edit-pill--delete" v-else>删除模式：点选后删除</span>
+              <span class="edit-pill" v-if="editSelectedIndex !== null">已选中 #{{ editSelectedIndex + 1 }}</span>
+            </div>
+            <div class="edit-canvas-area">
+              <img v-if="editImageUrl" ref="editImg" :src="editImageUrl" class="edit-img"
+                @load="onEditImgLoad" alt="标注图" />
+              <canvas ref="editCanvas" class="edit-canvas"
+                :style="{ cursor: editMode === 'add' ? 'crosshair' : 'default' }"
+                @mousedown="onEditCanvasMouseDown"
+                @mousemove="onEditCanvasMouseMove"
+                @mouseup="onEditCanvasMouseUp"
+                @click="onEditCanvasClick"></canvas>
+              <div v-if="!editImageUrl" class="edit-placeholder">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                </svg>
+                <p>暂无图片</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
   </div>
 </template>
 
@@ -229,6 +295,20 @@ export default {
       selectedFarmId: null,
       showFarmModal: false,
       warningFlash: false,
+      savedOriginalCount: null,
+      // 编辑模式
+      showEditModal: false,
+      editImageUrl: null,
+      editRecordId: null,
+      editBoxes: [],
+      editSelectedIndex: null,
+      editIsDrawing: false,
+      editDrawStart: null,
+      editDrawEnd: null,
+      editDrawing: false,
+      editHint: 'select',
+      editDraggingCorner: null,
+      editMode: 'add',
       // 批次文件夹上传
       batchFiles: [],
       batchPaths: [],
@@ -268,7 +348,7 @@ export default {
     annotatedImage() { return this.$store.state.result?.annotatedImage || null },
     previewAnnotatedImage() {
       if (this.batchResults && this.selectedBatchImage) return this.selectedBatchImage.url
-      return this.annotatedImage
+      return this._previewComposited || this.annotatedImage
     },
     previewPigCount() {
       if (this.batchResults && this.selectedBatchImage) return this.selectedBatchImage.pig_count
@@ -332,16 +412,18 @@ export default {
         ]
       }
       return [
-        { icon: 'PiggyBank', label: '预测数量', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult, animated: true },
+        { icon: 'PiggyBank', label: '预测识别数', value: this.hasResult ? (this.savedOriginalCount ?? this.pigCount) : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
         { icon: 'Zap', label: '处理耗时', value: this.inferenceTime, unit: this.inferenceTime ? 'ms' : null, cls: '', active: !!this.inferenceTime },
         { icon: 'Target', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: this.confClass, active: this.hasResult },
-        { icon: 'Sparkles', label: '当次识别总数', value: this.hasResult ? this.$store.state.totalPigs : null, unit: null, cls: '', active: this.hasResult }
+        { icon: 'Sparkles', label: '实际识别数', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult }
       ]
     }
   },
   watch: {
     pigCount(val) { if (val === null) { this.animatedCount = 0; return } this.animateNumber(val) },
-    hasResult(val) { if (!val && this.$refs.resultCard) this.$refs.resultCard.clearCanvas() },
+    hasResult(val) { if (!val && this.$refs.resultCard) this.$refs.resultCard.clearCanvas(); this._previewComposited = null },
+    annotatedImage() { this._previewComposited = null },
+    batchImageIndex() { this._previewComposited = null },
     '$route.path'(newPath) {
       // 当路由切换到主页面，且autoAnalyze为true时，自动执行识别操作
       if (newPath === '/' && this.$store.state.autoAnalyze) {
@@ -384,6 +466,239 @@ export default {
         setTimeout(() => { this.warningFlash = false }, 1300)
       }
     },
+
+    // ── 编辑模式 ──
+    openEditModal() {
+      if (!this.hasResult || !this.result || !this.result.boxes) return
+      this.editBoxes = JSON.parse(JSON.stringify(this.result.boxes))
+      this.editRecordId = this.result.recordId || null
+      this.editImageUrl = this.annotatedImage || this.previewUrl
+      this.editSelectedIndex = null
+      this.editIsDrawing = false
+      this.editDrawStart = null
+      this.editDrawEnd = null
+      this.editHint = 'select'
+      this.showEditModal = true
+      this.$nextTick(() => this.drawEditCanvas())
+      this.$store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
+    },
+    closeEditModal() {
+      this.showEditModal = false
+      this.editBoxes = []
+      this.editSelectedIndex = null
+      this.editImageUrl = null
+      this.editHint = 'select'
+      this.$store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
+    },
+    onEditImgLoad() {
+      this.drawEditCanvas()
+    },
+    drawEditCanvas() {
+      const canvas = this.$refs.editCanvas
+      const img = this.$refs.editImg
+      if (!canvas || !img || !img.clientWidth) return
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width
+      canvas.height = rect.height
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      const imgW = this.imageMeta?.width || img.naturalWidth
+      const imgH = this.imageMeta?.height || img.naturalHeight
+      const scaleX = rect.width / imgW
+      const scaleY = rect.height / imgH
+      this.editBoxes.forEach((box, i) => {
+        const x1 = box.x1 * scaleX
+        const y1 = box.y1 * scaleY
+        const x2 = box.x2 * scaleX
+        const y2 = box.y2 * scaleY
+        const isSelected = i === this.editSelectedIndex
+        const color = isSelected ? 'rgba(255, 149, 0, 0.8)' : 'rgba(52, 199, 89, 0.7)'
+        ctx.strokeStyle = color
+        ctx.lineWidth = isSelected ? 2.5 : 1.5
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+        if (isSelected) {
+          const cornerSize = 8
+          ctx.fillStyle = 'rgba(255, 149, 0, 0.9)'
+          const corners = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+          corners.forEach(([cx, cy]) => {
+            ctx.fillRect(cx - cornerSize / 2, cy - cornerSize / 2, cornerSize, cornerSize)
+          })
+        }
+      })
+    },
+    getEditCanvasCoords(e) {
+      const canvas = this.$refs.editCanvas
+      const img = this.$refs.editImg
+      if (!canvas || !img) return null
+      const rect = canvas.getBoundingClientRect()
+      const cx = e.clientX - rect.left
+      const cy = e.clientY - rect.top
+      const displayW = rect.width
+      const displayH = rect.height
+      const imgW = this.imageMeta?.width || img.naturalWidth
+      const imgH = this.imageMeta?.height || img.naturalHeight
+      return {
+        cx, cy,
+        imgX: cx / displayW * imgW,
+        imgY: cy / displayH * imgH,
+        scaleX: displayW / imgW,
+        scaleY: displayH / imgH
+      }
+    },
+    onEditCanvasMouseDown(e) {
+      if (this.editMode !== 'add') return
+      const c = this.getEditCanvasCoords(e)
+      if (!c) return
+      this.editDrawing = true
+      this.editDrawStart = { x: c.imgX, y: c.imgY }
+      this.editDrawEnd = { x: c.imgX, y: c.imgY }
+    },
+    onEditCanvasMouseMove(e) {
+      if (!this.editDrawing) return
+      const c = this.getEditCanvasCoords(e)
+      if (!c) return
+      this.editDrawEnd = { x: c.imgX, y: c.imgY }
+      this.drawEditCanvas()
+      // 绘制正在拖拽的框
+      const canvas = this.$refs.editCanvas
+      const img = this.$refs.editImg
+      if (!canvas || !img) return
+      const ctx = canvas.getContext('2d')
+      const sx = this.editDrawStart.x / (this.imageMeta?.width || img.naturalWidth) * canvas.width
+      const sy = this.editDrawStart.y / (this.imageMeta?.height || img.naturalHeight) * canvas.height
+      const ex = this.editDrawEnd.x / (this.imageMeta?.width || img.naturalWidth) * canvas.width
+      const ey = this.editDrawEnd.y / (this.imageMeta?.height || img.naturalHeight) * canvas.height
+      ctx.strokeStyle = 'rgba(0, 122, 255, 0.7)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 3])
+      ctx.strokeRect(Math.min(sx, ex), Math.min(sy, ey), Math.abs(ex - sx), Math.abs(ey - sy))
+      ctx.setLineDash([])
+    },
+    onEditCanvasMouseUp(e) {
+      if (!this.editDrawing) return
+      this.editDrawing = false
+      const s = this.editDrawStart
+      const en = this.editDrawEnd
+      if (!s || !en) return
+      const x1 = Math.min(s.x, en.x), y1 = Math.min(s.y, en.y)
+      const x2 = Math.max(s.x, en.x), y2 = Math.max(s.y, en.y)
+      // 最小尺寸检查
+      if (Math.abs(x2 - x1) < 10 || Math.abs(y2 - y1) < 10) return
+      this.editBoxes.push({ x1, y1, x2, y2, score: 1.0, class_name: 'pig' })
+      this.editSelectedIndex = this.editBoxes.length - 1
+      this.drawEditCanvas()
+      this.$store.commit('ADD_LOG', { msg: `已添加新识别框 #${this.editBoxes.length}`, type: 'info' })
+    },
+    onEditCanvasClick(e) {
+      if (this.editMode !== 'delete') return
+      const c = this.getEditCanvasCoords(e)
+      if (!c) return
+      const { cx, cy, scaleX, scaleY } = c
+      let clicked = null
+      for (let i = this.editBoxes.length - 1; i >= 0; i--) {
+        const box = this.editBoxes[i]
+        const x1 = box.x1 * scaleX, y1 = box.y1 * scaleY
+        const x2 = box.x2 * scaleX, y2 = box.y2 * scaleY
+        if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
+          clicked = i; break
+        }
+      }
+      if (clicked !== null) {
+        // 直接删除，无需二次确认
+        this.editBoxes.splice(clicked, 1)
+        this.editSelectedIndex = null
+        this.drawEditCanvas()
+        this.$store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+      }
+    },
+    addBoxInModal() {
+      this.editBoxes.push({ x1: 100, y1: 100, x2: 200, y2: 200, score: 1.0, class_name: 'pig' })
+      this.editSelectedIndex = this.editBoxes.length - 1
+      this.$store.commit('ADD_LOG', { msg: '已添加新识别框', type: 'info' })
+    },
+    deleteBoxInModal() {
+      if (this.editSelectedIndex === null) return
+      this.editBoxes.splice(this.editSelectedIndex, 1)
+      this.editSelectedIndex = null
+      this.$store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+    },
+    async saveBoxesToDb() {
+      // 脏检查：无改动时直接提示成功
+      const original = JSON.stringify(this.result?.boxes || [])
+      const current = JSON.stringify(this.editBoxes)
+      if (original === current) {
+        this.showNotify('success', '保存成功', `已更新 ${this.editBoxes.length} 个识别框`)
+        this.closeEditModal()
+        return
+      }
+      // 如果没有 recordId，尝试从最新记录获取
+      if (!this.editRecordId) {
+        try {
+          const statsRes = await (await import('@/api/detectionApi')).getDetectionRecords({ page: 1, page_size: 1 })
+          if (statsRes?.data?.length > 0) {
+            this.editRecordId = statsRes.data[0].id
+          }
+        } catch (_) {}
+      }
+      if (!this.editRecordId) {
+        this.$store.commit('ADD_LOG', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
+        this.showNotify('error', '保存失败', '无 recordId，请先重新识别')
+        return
+      }
+      try {
+        const { updateDetectionRecord } = await import('@/api/detectionApi')
+        const res = await updateDetectionRecord(this.editRecordId, {
+          boxes: this.editBoxes,
+          annotated_image: this.annotatedImage,
+          original_image: this.previewUrl
+        })
+        this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
+        this.result.count = this.editBoxes.length
+        // 同步更新 store 中 results 数组的 count（用于 header 显示）
+        const idx = this.$store.state.currentImageIndex
+        if (this.$store.state.results[idx]) {
+          this.$store.state.results[idx].count = this.editBoxes.length
+        }
+        // 用后端返回的新标注图更新显示（含新数字）
+        if (res.annotated_image) {
+          this.$store.commit('SET_RESULT', { ...this.result, annotatedImage: res.annotated_image })
+        }
+        // 立即刷新主视图标注
+        this.$nextTick(() => {
+          if (this.$refs.resultCard) this.$refs.resultCard.drawBoxesAnimated()
+        })
+        this.$store.commit('ADD_LOG', { msg: `已保存 ${this.editBoxes.length} 个识别框到数据库`, type: 'success' })
+        this.showNotify('success', '保存成功', `已更新 ${this.editBoxes.length} 个识别框`)
+        this.closeEditModal()
+      } catch (e) {
+        this.$store.commit('ADD_LOG', { msg: '保存失败：' + e.message, type: 'error' })
+        this.showNotify('error', '保存失败', e.message)
+      }
+    },
+    exportAnnotatedImage() {
+      // 使用后端返回的标注图（带数字）
+      const src = this.annotatedImage
+      if (!src) return
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const exportCanvas = document.createElement('canvas')
+        exportCanvas.width = img.naturalWidth
+        exportCanvas.height = img.naturalHeight
+        const ctx = exportCanvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const link = document.createElement('a')
+        const baseName = this.imageMeta?.name
+          ? this.imageMeta.name.replace(/\.[^.]+$/, '')
+          : '识别结果'
+        link.download = `${baseName}_标注结果.png`
+        link.href = exportCanvas.toDataURL('image/png')
+        link.click()
+        this.$store.commit('ADD_LOG', { msg: '已导出标注图片', type: 'success' })
+      }
+      img.src = src
+    },
+
     toggleFarmDropdown() {
       this.showFarmDropdown = !this.showFarmDropdown
     },
@@ -411,8 +726,24 @@ export default {
         this.showImagePreview = true
         document.body.style.overflow = 'hidden'
       } else if (this.hasResult && this.annotatedImage) {
-        this.showImagePreview = true
-        document.body.style.overflow = 'hidden'
+        // 合成图片 + canvas 框到预览
+        this.$nextTick(() => {
+          const canvas = document.querySelector('.box-canvas')
+          const img = document.querySelector('.img-result-base')
+          if (canvas && img && img.naturalWidth > 0) {
+            const c = document.createElement('canvas')
+            c.width = img.naturalWidth
+            c.height = img.naturalHeight
+            const ctx = c.getContext('2d')
+            ctx.drawImage(img, 0, 0)
+            ctx.drawImage(canvas, 0, 0, img.naturalWidth, img.naturalHeight)
+            this._previewComposited = c.toDataURL('image/png')
+          } else {
+            this._previewComposited = null
+          }
+          this.showImagePreview = true
+          document.body.style.overflow = 'hidden'
+        })
       }
     },
     closeImagePreview() {
@@ -497,6 +828,7 @@ export default {
     },
     clearImage() {
       if (this._abortCtrl) { this._abortCtrl.abort(); this._abortCtrl = null }
+      this.savedOriginalCount = null
       if (this.batchTree) {
         this.clearBatch()
       } else {
@@ -601,6 +933,16 @@ export default {
           msg: `批次检测完成: ${this.batchResults.total_pigs} 头猪`,
           type: 'info'
         })
+        // 第一张图的框立即画（用缩略图），不等全尺寸图加载
+        const firstImg = document.querySelector('.img-result-base')
+        const drawBoxes = () => this.$refs.resultCard?.drawBoxesAnimated()
+        if (firstImg?.complete && firstImg.clientWidth > 0) {
+          this.$nextTick(drawBoxes)
+        } else if (firstImg) {
+          firstImg.addEventListener('load', () => this.$nextTick(drawBoxes), { once: true })
+        }
+        // 后台加载全尺寸标注图
+        this.loadBatchFullImages()
       } catch (e) {
         if (e.name === 'AbortError') {
           this.closeNotify()
@@ -616,15 +958,30 @@ export default {
         this.$store.commit('SET_ANALYZING', false)
       }
     },
+    async loadBatchFullImages() {
+      if (!this.batchResults?.units) return
+      for (const unit of this.batchResults.units) {
+        for (const pen of unit.pens) {
+          if (!pen.record_id) continue
+          try {
+            const res = await fetch(`/api/detection-records/${pen.record_id}`)
+            if (!res.ok) continue
+            const data = await res.json()
+            if (data.annotated_image) {
+              pen.annotated_image = data.annotated_image
+            }
+          } catch (_) {}
+        }
+      }
+      // 触发 Vue 响应式更新
+      this.batchResults = { ...this.batchResults }
+    },
 
     downloadBatchExcel() {
       if (!this.batchResults || !this.batchResults.excel_base64) return
+      this.showNotify('info', '正在生成', 'Excel 导出中…')
       const byteChars = atob(this.batchResults.excel_base64)
-      const byteNums = new Array(byteChars.length)
-      for (let i = 0; i < byteChars.length; i++) {
-        byteNums[i] = byteChars.charCodeAt(i)
-      }
-      const byteArr = new Uint8Array(byteNums)
+      const byteArr = Uint8Array.from(byteChars, c => c.charCodeAt(0))
       const blob = new Blob([byteArr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -632,6 +989,7 @@ export default {
       a.download = (this.batchResults.batch_name || '批次统计') + '.xlsx'
       a.click()
       URL.revokeObjectURL(url)
+      this.showNotify('success', '导出成功', `共 ${this.batchResults.total_photos || ''} 张图片`)
     },
 
     clearBatch() {
@@ -716,6 +1074,7 @@ export default {
         } else {
           // 处理单张结果
           this.$store.commit('SET_RESULT', result)
+          if (!this.savedOriginalCount) this.savedOriginalCount = result.count
           this.$store.commit('SET_PROGRESS', 100)
           this.updateToastProgress(100)
 
@@ -1176,5 +1535,213 @@ body {
 .overlay-fade-enter-from,
 .overlay-fade-leave-to { opacity: 0 }
 
+/* 编辑模态框 */
+.edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px
+}
+.edit-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px)
+}
+.edit-container {
+  position: relative;
+  width: 90vw;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2)
+}
+.edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sep)
+}
+.edit-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text)
+}
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px
+}
+
+.edit-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  padding: 3px
+}
+
+.edit-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all 0.2s ease
+}
+
+.edit-tab:hover {
+  color: var(--text-2)
+}
+
+.edit-tab--active {
+  background: white;
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1)
+}
+.edit-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.2s
+}
+.edit-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue)
+}
+.edit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed
+}
+.edit-btn--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white
+}
+.edit-btn--primary:hover:not(:disabled) {
+  background: #0068d6
+}
+.edit-btn--danger {
+  color: var(--red);
+  border-color: rgba(255, 59, 48, 0.2)
+}
+.edit-btn--danger:hover:not(:disabled) {
+  background: rgba(255, 59, 48, 0.08);
+  border-color: var(--red)
+}
+.edit-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s
+}
+.edit-close-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text)
+}
+.edit-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden
+}
+.edit-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--sep);
+  font-size: 12px;
+  color: var(--text-3)
+}
+.edit-pill {
+  padding: 3px 8px;
+  background: rgba(0, 122, 255, 0.08);
+  border-radius: 6px;
+  color: var(--blue);
+  font-weight: 500
+}
+
+.edit-pill--mode {
+  background: rgba(52, 199, 89, 0.08);
+  color: var(--green)
+}
+
+.edit-pill--delete {
+  background: rgba(255, 59, 48, 0.08);
+  color: var(--red)
+}
+.edit-hint {
+  margin-left: auto;
+  color: var(--text-4)
+}
+.edit-canvas-area {
+  flex: 1;
+  min-height: 300px;
+  background: rgba(0, 0, 0, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden
+}
+.edit-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block
+}
+.edit-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: crosshair
+}
+.edit-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3);
+  font-size: 14px
+}
+.edit-placeholder-sub {
+  font-size: 12px;
+  color: var(--text-4)
+}
 
 </style>

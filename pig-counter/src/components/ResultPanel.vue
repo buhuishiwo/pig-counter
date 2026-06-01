@@ -218,7 +218,7 @@ export default {
 /* Transition */
 .count-pop-enter-active { transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .count-pop-leave-active { transition: all 0.2s ease; }
-.count-pop-enter        { opacity: 0; transform: scale(0.5); }
+.count-pop-enter-from   { opacity: 0; transform: scale(0.5); }
 .count-pop-leave-to     { opacity: 0; transform: scale(0.8); }
 
 /* Confidence */

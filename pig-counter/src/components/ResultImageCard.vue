@@ -7,6 +7,18 @@
         <span class="img-card-title">{{ batchMode ? (batchProcessing ? '批量扫描中…' : '批量结果') : '标注结果' }}</span>
       </div>
       <div class="img-card-header-right">
+        <button v-if="hasResult" class="btn-header" @click="$emit('edit')" title="编辑标注">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+          </svg>
+          编辑标注
+        </button>
+        <button v-if="hasResult" class="btn-header" @click="$emit('export')" title="导出图片">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          导出图片
+        </button>
         <template v-if="batchMode && selectedBatchImage">
           <span class="img-card-chip">{{ selectedBatchImage.unit_name }}</span>
           <span class="img-card-chip">{{ selectedBatchImage.pen_name }}</span>
@@ -37,7 +49,7 @@
         <!-- 单图模式：有图片时 -->
         <div class="canvas-wrap" v-if="hasImage" @click="$emit('open-preview')"
           :class="{ 'canvas-wrap--clickable': hasResult }">
-          <img :src="previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
+          <img :src="annotatedImage || previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
             @load="onResultImgLoad" />
           <canvas ref="boxCanvas" class="box-canvas"></canvas>
           <transition name="overlay-fade">
@@ -115,6 +127,7 @@ export default {
   props: {
     hasImage: { type: Boolean, default: false },
     hasResult: { type: Boolean, default: false },
+    annotatedImage: { type: String, default: null },
     previewUrl: { type: String, default: '' },
     isAnalyzing: { type: Boolean, default: false },
     result: { type: Object, default: null },
@@ -158,6 +171,10 @@ export default {
       const img = this.$refs.baseImg
       if (!canvas || !img) return
 
+      const containerW = img.clientWidth || canvas.parentElement?.clientWidth || 0
+      const containerH = img.clientHeight || canvas.parentElement?.clientHeight || 0
+      if (!containerW || !containerH) return
+
       let boxes, imgW, imgH
       if (this.batchMode && this.selectedBatchResult) {
         boxes = this.selectedBatchResult.boxes || []
@@ -171,7 +188,7 @@ export default {
         return
       }
 
-      canvas.width = img.clientWidth; canvas.height = img.clientHeight
+      canvas.width = containerW; canvas.height = containerH
       const ctx = canvas.getContext('2d')
       let prog = 0; const total = 60
       const draw = () => {
@@ -250,6 +267,26 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px
+}
+
+.btn-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: rgba(0, 0, 0, 0.04);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s
+}
+
+.btn-header:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-2)
 }
 
 .traffic-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0 }

@@ -23,6 +23,7 @@ export default createStore({
     result: null,         // { count, confidence, boxes, inferenceTime }（单张，保持兼容）
     results: [],          // 结果数组（多张）
     totalPigs: 0,         // 总猪只数
+    originalCount: null,  // 模型原始检测数（不随编辑变化）
 
     // 系统日志
     logs: [],
@@ -35,6 +36,7 @@ export default createStore({
     hasImage:       state => !!state.previewUrl || state.imageFiles.length > 0,
     hasResult:      state => state.result !== null || state.results.length > 0,
     pigCount:       state => state.result?.count      ?? null,
+    originalCount:  state => state.originalCount ?? state.result?.count ?? null,
     confidence:     state => state.result?.confidence ?? null,
     confidencePct:  state => state.result
       ? Math.round(state.result.confidence * 100)
@@ -102,6 +104,7 @@ export default createStore({
       state.currentImageIndex = 0
       state.results = []
       state.totalPigs = null
+      state.originalCount = null
       state.uploadProgress = 0
     },
     SET_ANALYZING(state, val) {
@@ -112,6 +115,12 @@ export default createStore({
     },
     SET_RESULT(state, result) {
       state.result = result
+      if (result && result.count != null && !state.originalCount) {
+        state.originalCount = result.count
+      }
+    },
+    SET_ORIGINAL_COUNT(state, count) {
+      state.originalCount = count
     },
     SET_RESULTS(state, { results, totalPigs }) {
       state.results = results

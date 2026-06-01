@@ -171,7 +171,7 @@ export default {
   left: 0 !important;
   right: auto !important;
   min-width: 200px;
-  width: max-content;
+  max-width: 280px;
   z-index: 1100
 }
 

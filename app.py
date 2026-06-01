@@ -78,6 +78,7 @@ class PredictResponse(BaseModel):
     detections: list[DetectionBox]
     processing_time_ms: float
     annotated_image: str
+    record_id: int | None = None
 
 
 class BatchPredictResponse(BaseModel):
@@ -136,25 +137,30 @@ def create_thumbnail(image: np.ndarray, max_size: int = 320, quality: int = 60) 
     return f"data:image/jpeg;base64,{encoded}"
 
 
+def decode_base64_image(base64_str: str) -> np.ndarray:
+    """从 base64 字符串解码图片"""
+    if base64_str.startswith("data:image"):
+        base64_str = base64_str.split(",")[1]
+    img_data = base64.b64decode(base64_str)
+    np_arr = np.frombuffer(img_data, np.uint8)
+    return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+
 def draw_detections(image: np.ndarray, detections: list[DetectionBox]) -> np.ndarray:
+    """在识别结果图上仅绘制数字序号，不绘制矩形框"""
     annotated = image.copy()
     for index, det in enumerate(detections, start=1):
-        x1, y1, x2, y2 = map(int, [det.x1, det.y1, det.x2, det.y2])
-        color = (30, 190, 110)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"pig #{index} {det.confidence:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-        top = max(y1 - th - 10, 0)
-        cv2.rectangle(annotated, (x1, top), (x1 + tw + 10, top + th + 10), color, -1)
-        cv2.putText(
-            annotated,
-            label,
-            (x1 + 5, top + th + 2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            (20, 20, 20),
-            2,
-        )
+        cx = int((det.x1 + det.x2) / 2)
+        cy = int((det.y1 + det.y2) / 2)
+        box_short = min(det.x2 - det.x1, det.y2 - det.y1)
+        label = str(index)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = max(2.0, min(box_short / 35.0, 4.0))
+        thickness = max(3, int(font_scale * 2))
+        (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+        tx = cx - tw // 2
+        ty = cy + th // 2
+        cv2.putText(annotated, label, (tx, ty), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
     return annotated
 
 
@@ -414,7 +420,7 @@ async def predict_batch(
             ] if result.detections else []
 
             # 保存识别记录到数据库
-            await save_detection_record(
+            record_id = await save_detection_record(
                 farm_id=farm_id,
                 image_name=file.filename or "unknown.jpg",
                 predicted_count=result.predicted_count,
@@ -422,8 +428,11 @@ async def predict_batch(
                 annotated_image=annotated_image,
                 confidence=avg_confidence,
                 boxes=boxes_data,
+                original_image=image,
             )
-            
+
+            # 设置返回结果的 record_id
+            result = result.model_copy(update={"record_id": record_id})
             results.append(result)
             total_pigs += result.predicted_count
         
@@ -449,23 +458,27 @@ async def save_detection_record(
     annotated_image: np.ndarray,
     confidence: float = 0,
     boxes: list[dict] | None = None,
-) -> None:
-    """保存识别记录到数据库（存储压缩缩略图）"""
+    original_image: np.ndarray | None = None,
+) -> int | None:
+    """保存识别记录到数据库（存储压缩缩略图），返回 record_id"""
     try:
         import json as _json
-        thumbnail_base64 = create_thumbnail(annotated_image, max_size=320, quality=60)
+        thumbnail_base64 = create_thumbnail(annotated_image, max_size=800, quality=90)
+        orig_thumbnail = create_thumbnail(original_image, max_size=800, quality=85) if original_image is not None else None
         boxes_json = _json.dumps(boxes, ensure_ascii=False) if boxes else None
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO detection_records
-                        (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes, annotated_image, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-                    (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes_json, thumbnail_base64)
+                        (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes, annotated_image, original_image, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes_json, thumbnail_base64, orig_thumbnail)
                 )
                 conn.commit()
+                return cursor.lastrowid
     except Exception as exc:
         print(f"保存识别记录失败: {exc}")
+        return None
 
 
 # ============================================================
@@ -756,7 +769,16 @@ class DetectionRecordResponse(BaseModel):
     image_name: str
     predicted_count: int
     processing_time_ms: float
+    boxes: list | None = None
+    annotated_image: str | None = None
     created_at: datetime
+
+
+class UpdateDetectionRecordRequest(BaseModel):
+    annotated_image: str | None = None
+    original_image: str | None = None
+    predicted_count: int | None = None
+    boxes: list | None = None
 
 
 class DetectionRecordListResponse(BaseModel):
@@ -999,6 +1021,120 @@ async def get_detection_record_detail(record_id: int) -> PredictResponse:
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"获取识别记录详情失败: {exc}"
+        ) from exc
+
+
+@app.put("/api/detection-records/{record_id}", response_model=DetectionRecordResponse)
+async def update_detection_record(
+    record_id: int,
+    update_data: UpdateDetectionRecordRequest
+) -> DetectionRecordResponse:
+    """更新识别记录（仅允许更新 annotated_image、predicted_count 和 boxes）"""
+    try:
+        import json as _json
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                updates = []
+                params = []
+
+                if update_data.boxes is not None:
+                    # 优先用前端发来的原图，其次用数据库原图，最后用标注图
+                    img_array = None
+                    if update_data.original_image:
+                        img_array = decode_base64_image(update_data.original_image)
+                    if img_array is None:
+                        cursor.execute("SELECT original_image FROM detection_records WHERE id = %s", (record_id,))
+                        row = cursor.fetchone()
+                        if row and row["original_image"]:
+                            orig_b64 = row["original_image"]
+                            if orig_b64.startswith("data:"):
+                                orig_b64 = orig_b64.split(",")[1]
+                            import base64 as _base64
+                            orig_bytes = _base64.b64decode(orig_b64)
+                            img_array = cv2.imdecode(np.frombuffer(orig_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if img_array is None and update_data.annotated_image is not None:
+                        img_array = decode_base64_image(update_data.annotated_image)
+
+                    if img_array is not None:
+                        boxes_list = update_data.boxes
+                        for idx, box in enumerate(boxes_list, start=1):
+                            x1 = int(box.get("x1", 0))
+                            y1 = int(box.get("y1", 0))
+                            x2 = int(box.get("x2", 0))
+                            y2 = int(box.get("y2", 0))
+                            cx = (x1 + x2) // 2
+                            cy = (y1 + y2) // 2
+                            box_short = min(x2 - x1, y2 - y1)
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            font_scale = max(2.0, min(box_short / 35.0, 4.0))
+                            thickness = max(3, int(font_scale * 2))
+                            label = str(idx)
+                            (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+                            tx = cx - tw // 2
+                            ty = cy + th // 2
+                            cv2.putText(img_array, label, (tx, ty), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+                        thumbnail_base64 = create_thumbnail(img_array, max_size=800, quality=90)
+                        updates.append("annotated_image = %s")
+                        params.append(thumbnail_base64)
+
+                    updates.append("boxes = %s")
+                    params.append(_json.dumps(update_data.boxes))
+
+                if update_data.annotated_image is not None and update_data.boxes is None:
+                    updates.append("annotated_image = %s")
+                    params.append(update_data.annotated_image)
+                if update_data.predicted_count is not None:
+                    updates.append("predicted_count = %s")
+                    params.append(update_data.predicted_count)
+
+                if not updates:
+                    raise HTTPException(status_code=400, detail="没有提供要更新的字段")
+
+                params.append(record_id)
+                cursor.execute(
+                    f"UPDATE detection_records SET {', '.join(updates)} WHERE id = %s",
+                    params
+                )
+                conn.commit()
+
+                if cursor.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="识别记录不存在")
+
+                cursor.execute(
+                    """
+                    SELECT dr.id, dr.farm_id, pf.name AS farm_name, dr.image_name,
+                           dr.predicted_count, dr.processing_time_ms, dr.annotated_image,
+                           dr.boxes, dr.created_at
+                    FROM detection_records dr
+                    LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    WHERE dr.id = %s
+                    """,
+                    (record_id,)
+                )
+                record = cursor.fetchone()
+                boxes = None
+                if record["boxes"]:
+                    try:
+                        boxes = _json.loads(record["boxes"])
+                    except Exception:
+                        boxes = None
+
+                return DetectionRecordResponse(
+                    id=record["id"],
+                    farm_id=record["farm_id"],
+                    farm_name=record["farm_name"],
+                    image_name=record["image_name"],
+                    predicted_count=record["predicted_count"],
+                    processing_time_ms=record["processing_time_ms"],
+                    boxes=boxes,
+                    annotated_image=record["annotated_image"],
+                    created_at=record["created_at"],
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"更新识别记录失败: {exc}"
         ) from exc
 
 
@@ -1292,10 +1428,11 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
 
         for pen in pens:
             result = None
+            record_id = None
             try:
                 image_bytes = await pen["file"].read()
 
-                # 保存原图到临时目录
+                # 保存原图到临时目录，用于 Excel 插图
                 img_path = tmp_dir / f"{unit_name}_{pen['name']}"
                 img_path.write_bytes(image_bytes)
                 image_paths.append(str(img_path))
@@ -1318,7 +1455,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                      "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
                     for d in result.detections
                 ] if result.detections else []
-                await save_detection_record(
+                record_id = await save_detection_record(
                     farm_id=farm_id,
                     image_name=pen["name"],
                     predicted_count=count,
@@ -1326,6 +1463,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                     annotated_image=_annotated,
                     confidence=avg_conf,
                     boxes=boxes_for_db,
+                    original_image=image,
                 )
             except Exception:
                 count = 0
@@ -1334,7 +1472,8 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                 "pen_name": pen["name"],
                 "pig_count": count,
                 "processing_time_ms": result.processing_time_ms if result is not None else 0,
-                "annotated_image": result.annotated_image if result is not None else None,
+                "annotated_image": create_thumbnail(_annotated, max_size=480, quality=70) if result is not None and _annotated is not None else None,
+                "record_id": record_id,
                 "image_width": result.image_width if result is not None else 0,
                 "image_height": result.image_height if result is not None else 0,
                 "confidence": (
@@ -1536,7 +1675,7 @@ def _build_batch_excel(
         ws.cell(row=summary_row, column=c).border = cell_border
         ws.cell(row=summary_row, column=c).alignment = center
 
-    # 8. 插入原图到 H 列（Pillow 缩放到 350x210, quality 85）
+    # 8. 插入原图到 H 列（Pillow 缩放到 350x210, quality 100）
     ws.column_dimensions['H'].width = 50
     ROW_HEIGHT_PT = 160
     IMG_TARGET_W, IMG_TARGET_H = 350, 210
