@@ -239,7 +239,7 @@
               <span class="edit-pill" v-if="editSelectedIndex !== null">已选中 #{{ editSelectedIndex + 1 }}</span>
             </div>
             <div class="edit-canvas-area">
-              <img v-if="editImageUrl" ref="editImg" :src="editImageUrl" class="edit-img"
+              <img v-if="editImageUrl" ref="editImg" :src="editImageUrl" :key="editImgKey" class="edit-img"
                 @load="onEditImgLoad" alt="标注图" />
               <canvas ref="editCanvas" class="edit-canvas"
                 :style="{ cursor: editMode === 'add' ? 'crosshair' : 'default' }"
@@ -300,6 +300,7 @@ export default {
       // 编辑模式
       showEditModal: false,
       editImageUrl: null,
+      editImgKey: 0,
       editRecordId: null,
       editBoxes: [],
       editSelectedIndex: null,
@@ -499,7 +500,7 @@ export default {
       } else if (this.result) {
         boxes = this.result.boxes || []
         recordId = this.result.recordId || null
-        imageUrl = this.annotatedImage || this.previewUrl
+        imageUrl = this.previewUrl
       } else {
         return
       }
@@ -507,6 +508,7 @@ export default {
       this.editBoxes = JSON.parse(JSON.stringify(boxes))
       this.editRecordId = recordId
       this.editImageUrl = imageUrl
+      this.editImgKey++
       this.editSelectedIndex = null
       this.editIsDrawing = false
       this.editDrawStart = null
@@ -524,21 +526,44 @@ export default {
       this.$store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
     },
     onEditImgLoad() {
-      this.$nextTick(() => this.drawEditCanvas())
+      this.$nextTick(() => {
+        const canvas = this.$refs.editCanvas
+        const img = this.$refs.editImg
+        if (!canvas || !img || !img.naturalWidth) return
+        const containerW = img.clientWidth
+        const containerH = img.clientHeight
+        const natW = img.naturalWidth
+        const natH = img.naturalHeight
+        // object-fit: contain 下图片实际渲染尺寸
+        const scale = Math.min(containerW / natW, containerH / natH)
+        const renderW = Math.round(natW * scale)
+        const renderH = Math.round(natH * scale)
+        // canvas 精确覆盖图片
+        canvas.width = renderW
+        canvas.height = renderH
+        canvas.style.width = renderW + 'px'
+        canvas.style.height = renderH + 'px'
+        canvas.style.left = Math.round((containerW - renderW) / 2) + 'px'
+        canvas.style.top = Math.round((containerH - renderH) / 2) + 'px'
+        // 同步更新图片显示尺寸，消除留白
+        img.style.setProperty('width', renderW + 'px', 'important')
+        img.style.setProperty('height', renderH + 'px', 'important')
+        img.style.setProperty('left', Math.round((containerW - renderW) / 2) + 'px', 'important')
+        img.style.setProperty('top', Math.round((containerH - renderH) / 2) + 'px', 'important')
+        img.style.setProperty('object-fit', 'fill', 'important')
+        this.drawEditCanvas()
+      })
     },
     drawEditCanvas() {
       const canvas = this.$refs.editCanvas
       const img = this.$refs.editImg
-      if (!canvas || !img || !img.clientWidth) return
-      const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = rect.height
-      const ctx = canvas.getContext('2d')
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      const imgW = this.imageMeta?.width || img.naturalWidth
-      const imgH = this.imageMeta?.height || img.naturalHeight
+      if (!canvas || !img || !img.naturalWidth) return
+      const imgW = this.imageMeta?.width || this.selectedBatchImage?.image_width || img.naturalWidth
+      const imgH = this.imageMeta?.height || this.selectedBatchImage?.image_height || img.naturalHeight
       const scaleX = canvas.width / imgW
       const scaleY = canvas.height / imgH
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
       this.editBoxes.forEach((box, i) => {
         const x1 = box.x1 * scaleX
         const y1 = box.y1 * scaleY
@@ -549,6 +574,16 @@ export default {
         ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = isSelected ? 2.5 : 1.8
         ctx.shadowColor = color; ctx.shadowBlur = isSelected ? 10 : 5
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1); ctx.restore()
+        // 画数字序号（居中，黑色，统一字号）
+        const cx = (x1 + x2) / 2
+        const cy = (y1 + y2) / 2
+        ctx.save()
+        ctx.font = '22px Arial, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = 'rgba(0,0,0,0.85)'
+        ctx.fillText(String(i + 1), cx, cy)
+        ctx.restore()
       })
     },
     getEditCanvasCoords(e) {
@@ -558,8 +593,8 @@ export default {
       const rect = canvas.getBoundingClientRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
-      const imgW = this.imageMeta?.width || img.naturalWidth
-      const imgH = this.imageMeta?.height || img.naturalHeight
+      const imgW = this.imageMeta?.width || this.selectedBatchImage?.image_width || img.naturalWidth
+      const imgH = this.imageMeta?.height || this.selectedBatchImage?.image_height || img.naturalHeight
       return {
         cx, cy,
         imgX: cx / rect.width * imgW,
