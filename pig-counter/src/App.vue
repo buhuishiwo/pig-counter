@@ -87,6 +87,8 @@
           @download="downloadBatchExcel"
           @clear="clearBatch"
           @back="backToFolderTree"
+          @edit="openEditModal"
+          @export="exportAnnotatedImage"
         />
         <OriginalImageCard v-else
           :hasImage="hasImage"
@@ -104,7 +106,7 @@
 
         <ResultImageCard ref="resultCard"
           :hasImage="hasImage"
-          :hasResult="hasResult"
+          :hasResult="hasResult || !!batchResults"
           :annotatedImage="annotatedImage"
           :previewUrl="previewUrl"
           :isAnalyzing="isAnalyzing"
@@ -295,7 +297,6 @@ export default {
       selectedFarmId: null,
       showFarmModal: false,
       warningFlash: false,
-      savedOriginalCount: null,
       // 编辑模式
       showEditModal: false,
       editImageUrl: null,
@@ -402,6 +403,26 @@ export default {
       if (!img) return null
       return { boxes: img.boxes, count: img.pig_count }
     },
+    // 统一接口：单张/批量模式下的当前活跃结果（用于导出等）
+    activeResult() {
+      if (this.batchResults && this.selectedBatchImage) {
+        return {
+          boxes: this.selectedBatchImage.boxes || [],
+          recordId: this.selectedBatchImage.record_id || null,
+          imageUrl: this.selectedBatchImage.url,
+          count: this.selectedBatchImage.pig_count
+        }
+      }
+      if (this.result) {
+        return {
+          boxes: this.result.boxes || [],
+          recordId: this.result.recordId || null,
+          imageUrl: this.annotatedImage || this.previewUrl,
+          count: this.result.count
+        }
+      }
+      return null
+    },
     statCards() {
       if (this.batchTree) {
         return [
@@ -412,7 +433,7 @@ export default {
         ]
       }
       return [
-        { icon: 'PiggyBank', label: '预测识别数', value: this.hasResult ? (this.savedOriginalCount ?? this.pigCount) : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
+        { icon: 'PiggyBank', label: '预测识别数', value: this.hasResult ? (window.__modelOriginalCount || this.pigCount) : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
         { icon: 'Zap', label: '处理耗时', value: this.inferenceTime, unit: this.inferenceTime ? 'ms' : null, cls: '', active: !!this.inferenceTime },
         { icon: 'Target', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: this.confClass, active: this.hasResult },
         { icon: 'Sparkles', label: '实际识别数', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult }
@@ -469,17 +490,29 @@ export default {
 
     // ── 编辑模式 ──
     openEditModal() {
-      if (!this.hasResult || !this.result || !this.result.boxes) return
-      this.editBoxes = JSON.parse(JSON.stringify(this.result.boxes))
-      this.editRecordId = this.result.recordId || null
-      this.editImageUrl = this.annotatedImage || this.previewUrl
+      // 统一数据源：单张用 result，批量用 selectedBatchImage
+      let boxes, recordId, imageUrl
+      if (this.batchResults && this.selectedBatchImage) {
+        boxes = this.selectedBatchImage.boxes || []
+        recordId = this.selectedBatchImage.record_id || null
+        imageUrl = this.selectedBatchImage.url
+      } else if (this.result) {
+        boxes = this.result.boxes || []
+        recordId = this.result.recordId || null
+        imageUrl = this.annotatedImage || this.previewUrl
+      } else {
+        return
+      }
+      if (!boxes.length) return
+      this.editBoxes = JSON.parse(JSON.stringify(boxes))
+      this.editRecordId = recordId
+      this.editImageUrl = imageUrl
       this.editSelectedIndex = null
       this.editIsDrawing = false
       this.editDrawStart = null
       this.editDrawEnd = null
       this.editHint = 'select'
       this.showEditModal = true
-      this.$nextTick(() => this.drawEditCanvas())
       this.$store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
     },
     closeEditModal() {
@@ -491,7 +524,7 @@ export default {
       this.$store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
     },
     onEditImgLoad() {
-      this.drawEditCanvas()
+      this.$nextTick(() => this.drawEditCanvas())
     },
     drawEditCanvas() {
       const canvas = this.$refs.editCanvas
@@ -504,8 +537,8 @@ export default {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       const imgW = this.imageMeta?.width || img.naturalWidth
       const imgH = this.imageMeta?.height || img.naturalHeight
-      const scaleX = rect.width / imgW
-      const scaleY = rect.height / imgH
+      const scaleX = canvas.width / imgW
+      const scaleY = canvas.height / imgH
       this.editBoxes.forEach((box, i) => {
         const x1 = box.x1 * scaleX
         const y1 = box.y1 * scaleY
@@ -513,17 +546,9 @@ export default {
         const y2 = box.y2 * scaleY
         const isSelected = i === this.editSelectedIndex
         const color = isSelected ? 'rgba(255, 149, 0, 0.8)' : 'rgba(52, 199, 89, 0.7)'
-        ctx.strokeStyle = color
-        ctx.lineWidth = isSelected ? 2.5 : 1.5
-        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
-        if (isSelected) {
-          const cornerSize = 8
-          ctx.fillStyle = 'rgba(255, 149, 0, 0.9)'
-          const corners = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-          corners.forEach(([cx, cy]) => {
-            ctx.fillRect(cx - cornerSize / 2, cy - cornerSize / 2, cornerSize, cornerSize)
-          })
-        }
+        ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = isSelected ? 2.5 : 1.8
+        ctx.shadowColor = color; ctx.shadowBlur = isSelected ? 10 : 5
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1); ctx.restore()
       })
     },
     getEditCanvasCoords(e) {
@@ -533,16 +558,14 @@ export default {
       const rect = canvas.getBoundingClientRect()
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
-      const displayW = rect.width
-      const displayH = rect.height
       const imgW = this.imageMeta?.width || img.naturalWidth
       const imgH = this.imageMeta?.height || img.naturalHeight
       return {
         cx, cy,
-        imgX: cx / displayW * imgW,
-        imgY: cy / displayH * imgH,
-        scaleX: displayW / imgW,
-        scaleY: displayH / imgH
+        imgX: cx / rect.width * imgW,
+        imgY: cy / rect.height * imgH,
+        scaleX: rect.width / imgW,
+        scaleY: rect.height / imgH
       }
     },
     onEditCanvasMouseDown(e) {
@@ -559,15 +582,13 @@ export default {
       if (!c) return
       this.editDrawEnd = { x: c.imgX, y: c.imgY }
       this.drawEditCanvas()
-      // 绘制正在拖拽的框
       const canvas = this.$refs.editCanvas
-      const img = this.$refs.editImg
-      if (!canvas || !img) return
+      if (!canvas) return
       const ctx = canvas.getContext('2d')
-      const sx = this.editDrawStart.x / (this.imageMeta?.width || img.naturalWidth) * canvas.width
-      const sy = this.editDrawStart.y / (this.imageMeta?.height || img.naturalHeight) * canvas.height
-      const ex = this.editDrawEnd.x / (this.imageMeta?.width || img.naturalWidth) * canvas.width
-      const ey = this.editDrawEnd.y / (this.imageMeta?.height || img.naturalHeight) * canvas.height
+      const sx = this.editDrawStart.x * c.scaleX
+      const sy = this.editDrawStart.y * c.scaleY
+      const ex = this.editDrawEnd.x * c.scaleX
+      const ey = this.editDrawEnd.y * c.scaleY
       ctx.strokeStyle = 'rgba(0, 122, 255, 0.7)'
       ctx.lineWidth = 2
       ctx.setLineDash([6, 3])
@@ -624,7 +645,7 @@ export default {
     },
     async saveBoxesToDb() {
       // 脏检查：无改动时直接提示成功
-      const original = JSON.stringify(this.result?.boxes || [])
+      const original = JSON.stringify(this.activeResult?.boxes || [])
       const current = JSON.stringify(this.editBoxes)
       if (original === current) {
         this.showNotify('success', '保存成功', `已更新 ${this.editBoxes.length} 个识别框`)
@@ -649,19 +670,24 @@ export default {
         const { updateDetectionRecord } = await import('@/api/detectionApi')
         const res = await updateDetectionRecord(this.editRecordId, {
           boxes: this.editBoxes,
-          annotated_image: this.annotatedImage,
+          annotated_image: this.editImageUrl,
           original_image: this.previewUrl
         })
-        this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
-        this.result.count = this.editBoxes.length
-        // 同步更新 store 中 results 数组的 count（用于 header 显示）
-        const idx = this.$store.state.currentImageIndex
-        if (this.$store.state.results[idx]) {
-          this.$store.state.results[idx].count = this.editBoxes.length
-        }
-        // 用后端返回的新标注图更新显示（含新数字）
-        if (res.annotated_image) {
-          this.$store.commit('SET_RESULT', { ...this.result, annotatedImage: res.annotated_image })
+        // 更新对应模式的数据源
+        if (this.batchResults && this.selectedBatchImage) {
+          this.selectedBatchImage.boxes = JSON.parse(JSON.stringify(this.editBoxes))
+          this.selectedBatchImage.pig_count = this.editBoxes.length
+          if (res.annotated_image) this.selectedBatchImage.url = res.annotated_image
+        } else if (this.result) {
+          this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
+          this.result.count = this.editBoxes.length
+          const idx = this.$store.state.currentImageIndex
+          if (this.$store.state.results[idx]) {
+            this.$store.state.results[idx].count = this.editBoxes.length
+          }
+          if (res.annotated_image) {
+            this.$store.commit('SET_RESULT', { ...this.result, annotatedImage: res.annotated_image })
+          }
         }
         // 立即刷新主视图标注
         this.$nextTick(() => {
@@ -676,8 +702,8 @@ export default {
       }
     },
     exportAnnotatedImage() {
-      // 使用后端返回的标注图（带数字）
-      const src = this.annotatedImage
+      if (!this.activeResult) return
+      const src = this.activeResult.imageUrl
       if (!src) return
       const img = new Image()
       img.crossOrigin = 'anonymous'
@@ -688,9 +714,15 @@ export default {
         const ctx = exportCanvas.getContext('2d')
         ctx.drawImage(img, 0, 0)
         const link = document.createElement('a')
-        const baseName = this.imageMeta?.name
-          ? this.imageMeta.name.replace(/\.[^.]+$/, '')
-          : '识别结果'
+        // 单张模式用 imageMeta.name，批量模式用 unit_name/pen_name
+        let baseName = '识别结果'
+        if (this.imageMeta?.name) {
+          baseName = this.imageMeta.name.replace(/\.[^.]+$/, '')
+        } else if (this.selectedBatchImage) {
+          const unit = this.selectedBatchImage.unit_name || ''
+          const pen = (this.selectedBatchImage.pen_name || '').replace(/\.[^.]+$/, '')
+          baseName = unit ? `${unit}_${pen}` : pen
+        }
         link.download = `${baseName}_标注结果.png`
         link.href = exportCanvas.toDataURL('image/png')
         link.click()
@@ -828,7 +860,7 @@ export default {
     },
     clearImage() {
       if (this._abortCtrl) { this._abortCtrl.abort(); this._abortCtrl = null }
-      this.savedOriginalCount = null
+      window.__modelOriginalCount = null
       if (this.batchTree) {
         this.clearBatch()
       } else {
@@ -1059,6 +1091,7 @@ export default {
         // 处理批量结果
         if (result.totalImages) {
           this.$store.commit('SET_RESULTS', { results: result.results, totalPigs: result.totalPigs })
+          if (!window.__modelOriginalCount) window.__modelOriginalCount = result.totalPigs
           this.$store.commit('SET_PROGRESS', 100)
           this.updateToastProgress(100)
 
@@ -1074,7 +1107,8 @@ export default {
         } else {
           // 处理单张结果
           this.$store.commit('SET_RESULT', result)
-          if (!this.savedOriginalCount) this.savedOriginalCount = result.count
+          // 存储模型原始检测数（window 变量，不受 Vue reactivity 影响）
+          if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
           this.$store.commit('SET_PROGRESS', 100)
           this.updateToastProgress(100)
 
