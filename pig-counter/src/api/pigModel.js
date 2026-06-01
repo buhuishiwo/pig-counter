@@ -84,7 +84,7 @@ http.interceptors.response.use(
  * @returns {Promise<{ count: number, confidence: number, boxes: Array, annotatedImage: string, inferenceTime: number }>} 当传入单张图片时返回单个结果
  * @returns {Promise<{ totalImages: number, totalPigs: number, results: Array }>} 当传入多张图片时返回批量结果
  */
-export async function analyzeImage(imageFiles, onProgress, farmId = null) {
+export async function analyzeImage(imageFiles, onProgress, farmId = null, signal = null) {
   const formData = new FormData()
   
   // 处理单张或多张图片
@@ -103,6 +103,7 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null) {
 
   const response = await http.post('/predict-batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    signal,
     onUploadProgress: e => {
       if (onProgress && e.total) {
         onProgress(Math.round((e.loaded / e.total) * 100))
@@ -218,6 +219,20 @@ export async function checkHealth() {
   } catch {
     return false
   }
+}
+
+/**
+ * OCR 识别养殖场标记
+ * @param {File} imageFile - 图片文件对象
+ * @returns {Promise<{success: boolean, text: string|null, source: string|null, suggestions: Array}>}
+ */
+export async function recognizeFarmMark(imageFile) {
+  const formData = new FormData()
+  formData.append('file', imageFile)
+
+  return await http.post('/ocr/farm-mark', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 }
 
 /**

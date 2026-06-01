@@ -10,7 +10,7 @@
     <!-- 页面标题 -->
     <div class="stats-header">
       <div class="stats-header-left">
-        <div class="stats-title-icon">📊</div>
+        <BarChart3 :size="28" class="stats-title-icon" />
         <div>
           <h1 class="stats-title">数据统计中心</h1>
           <p class="stats-subtitle">各猪场识别数据汇总 · 结果回看</p>
@@ -32,8 +32,8 @@
 
     <!-- 全局汇总卡片 -->
     <div class="global-summary">
-      <div class="summary-card summary-card--blue" v-for="(item, i) in globalSummaryCards" :key="i" :style="{ '--d': i * 80 + 'ms' }">
-        <div class="summary-card-icon">{{ item.icon }}</div>
+      <div class="summary-card" v-for="(item, i) in globalSummaryCards" :key="i" :style="{ '--d': i * 80 + 'ms' }">
+        <div class="summary-card-icon"><component :is="item.icon" :size="20" /></div>
         <div class="summary-card-body">
           <div class="summary-card-val">{{ item.value }}</div>
           <div class="summary-card-label">{{ item.label }}</div>
@@ -75,7 +75,7 @@
       </div>
 
       <div v-else-if="timeSeriesData.length === 0" class="empty-state">
-        <div class="empty-icon">📈</div>
+        <BarChart3 :size="36" class="empty-icon" />
         <p>暂无趋势数据，请先进行图片识别</p>
       </div>
 
@@ -100,7 +100,7 @@
       </div>
 
       <div v-else-if="farmStats.length === 0" class="empty-state">
-        <div class="empty-icon">🐷</div>
+        <PiggyBank :size="40" class="empty-icon" />
         <p>暂无统计数据，请先进行图片识别</p>
       </div>
 
@@ -128,7 +128,7 @@
             >
               <td>
                 <div class="farm-name-cell">
-                  <span class="farm-icon-sm">🏭</span>
+                  <Warehouse :size="14" class="farm-icon-sm" />
                   <span class="farm-name-text">{{ farm.farm_name || '未分配猪场' }}</span>
                 </div>
               </td>
@@ -183,19 +183,37 @@
         <div class="section-header-left">
           <span class="section-dot section-dot--green"></span>
           <span class="section-title">识别结果回看</span>
-          <span class="section-badge" v-if="selectedFarmName">{{ selectedFarmName }}</span>
-          <span class="section-badge section-badge--gray" v-else>全部猪场</span>
+          <span class="total-badge" v-if="galleryTotal > 0">共 {{ galleryTotal }} 条</span>
         </div>
-        <div class="section-header-right">
-          <button
-            v-if="selectedFarmId !== null"
-            class="clear-filter-btn"
-            @click="clearFarmFilter"
-          >
-            × 清除筛选
+      </div>
+
+      <!-- 筛选栏 -->
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-label">时间</span>
+          <button v-for="r in [{k:'today',l:'今天'},{k:'week',l:'本周'},{k:'month',l:'本月'},{k:'custom',l:'自定义'},{k:'all',l:'全部'}]"
+            :key="r.k" class="filter-chip" :class="{ 'filter-chip--active': timeRange === r.k }"
+            @click="setTimeRange(r.k)">{{ r.l }}</button>
+        <template v-if="timeRange === 'custom'">
+          <input type="date" class="filter-date" v-model="customStartDate" @change="onCustomDateChange" />
+          <span class="filter-date-sep">—</span>
+          <input type="date" class="filter-date" v-model="customEndDate" @change="onCustomDateChange" />
+        </template>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">猪场</span>
+          <select class="filter-select" v-model="selectedFarmId" @change="onFarmSelectChange">
+            <option :value="null">全部猪场</option>
+            <option v-for="f in farmStats" :key="f.farm_id" :value="f.farm_id">{{ f.farm_name || '未分配' }}</option>
+          </select>
+        </div>
+        <div class="filter-group filter-group--search">
+          <input class="filter-input" v-model="filterKeyword" placeholder="搜索文件名…" @keyup.enter="onKeywordSearch" />
+          <button class="filter-search-btn" @click="onKeywordSearch">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
-          <span class="total-badge" v-if="galleryTotal > 0">共 {{ galleryTotal }} 条记录</span>
         </div>
+        <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearAllFilters">重置</button>
       </div>
 
       <div v-if="galleryLoading" class="loading-state">
@@ -204,7 +222,7 @@
       </div>
 
       <div v-else-if="gallery.length === 0" class="empty-state">
-        <div class="empty-icon">🖼️</div>
+        <Camera :size="36" class="empty-icon" />
         <p>{{ selectedFarmId !== null ? '该猪场暂无识别记录' : '暂无识别记录' }}</p>
       </div>
 
@@ -226,16 +244,17 @@
                 loading="lazy"
               />
               <div v-else class="gallery-img-placeholder">
-                <span>🐷</span>
+                <PiggyBank :size="32" />
               </div>
               <div class="gallery-overlay">
-                <div class="gallery-overlay-icon">🔍</div>
+                <ZoomIn :size="24" class="gallery-overlay-icon" />
                 <span>点击查看</span>
               </div>
             </div>
             <div class="gallery-card-info">
               <div class="gallery-count">
-                <span class="pig-badge">🐷 {{ record.predicted_count }} 头</span>
+                <span class="pig-badge"><PiggyBank :size="12" /> {{ record.predicted_count }} 头</span>
+                <span class="conf-badge" v-if="record.confidence">{{ Math.round(record.confidence * 100) }}%</span>
               </div>
               <div class="gallery-meta">
                 <span class="gallery-farm" v-if="record.farm_name">{{ record.farm_name }}</span>
@@ -285,7 +304,7 @@
         <div class="preview-panel">
           <div class="preview-panel-header">
             <div class="preview-panel-title">
-              <span class="preview-panel-icon">🐷</span>
+              <PiggyBank :size="22" class="preview-panel-icon" />
               <div>
                 <div class="preview-panel-name">{{ previewRecord.image_name }}</div>
                 <div class="preview-panel-meta">
@@ -301,7 +320,7 @@
           </div>
 
           <div class="preview-panel-body">
-            <div class="preview-img-area">
+            <div class="preview-img-area" @click="openFullscreen">
               <img
                 v-if="previewRecord.annotated_image"
                 :src="previewRecord.annotated_image"
@@ -309,8 +328,12 @@
                 class="preview-full-img"
               />
               <div v-else class="preview-no-img">
-                <span>🐷</span>
+                <PiggyBank :size="32" />
                 <p>暂无标注图片</p>
+              </div>
+              <div class="preview-img-overlay" v-if="previewRecord.annotated_image">
+                <ZoomIn :size="20" />
+                <span>点击放大</span>
               </div>
             </div>
 
@@ -321,8 +344,8 @@
                   <div class="preview-stat-label">识别头数</div>
                 </div>
                 <div class="preview-stat">
-                  <div class="preview-stat-val">{{ previewRecord.processing_time_ms }}</div>
-                  <div class="preview-stat-label">耗时 (ms)</div>
+                  <div class="preview-stat-val">{{ previewRecord.confidence ? Math.round(previewRecord.confidence * 100) + '%' : '—' }}</div>
+                  <div class="preview-stat-label">置信度</div>
                 </div>
               </div>
 
@@ -349,7 +372,28 @@
         </div>
       </div>
     </transition>
-    
+
+    <!-- 全屏图片查看：1:1 复刻 ImagePreviewModal -->
+    <transition name="modal-fade">
+      <div v-if="fullscreenSrc" class="image-preview-modal" @click="closeFullscreen">
+        <div class="preview-backdrop"></div>
+        <div class="preview-container" @click.stop>
+          <button class="preview-close" @click="closeFullscreen" title="关闭">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div class="preview-content">
+            <img :src="fullscreenSrc" class="preview-image" alt="识别结果大图" />
+            <div class="preview-info" v-if="previewRecord">
+              <span class="preview-badge">检测到 {{ previewRecord.predicted_count }} 头猪</span>
+              <span class="preview-badge" v-if="previewRecord.confidence">置信度 {{ Math.round(previewRecord.confidence * 100) }}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <footer class="footer">
       <span class="footer-brand">智慧猪群识别系统</span>
       <span class="footer-dot">·</span>
@@ -363,12 +407,14 @@
 <script>
 import { Chart, registerables } from 'chart.js'
 import { getStatsByFarm, getDetectionStats, getDetectionRecordsWithImages, getTimeSeriesStats } from '@/api/statsApi'
+import { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn } from '@lucide/vue'
 
 // 注册 Chart.js 组件
 Chart.register(...registerables)
 
 export default {
   name: 'StatsPage',
+  components: { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn },
 
   data() {
     return {
@@ -396,8 +442,17 @@ export default {
       galleryPageSize: 12,
       galleryLoading: false,
 
+      // 筛选条件
+      timeRange: 'all',
+      filterKeyword: '',
+      customStartDate: '',
+      customEndDate: '',
+
       // 预览弹窗
       previewRecord: null,
+
+      // 全屏查看
+      fullscreenSrc: null,
     }
   },
 
@@ -408,16 +463,40 @@ export default {
     
     globalSummaryCards() {
       return [
-        { icon: '🖼️', label: '识别图片总数', value: this.globalStats.total_images.toLocaleString() },
-        { icon: '🐷', label: '识别猪只总数', value: this.globalStats.total_pigs.toLocaleString() },
-        { icon: '📅', label: '今日识别图片', value: this.globalStats.today_images.toLocaleString() },
-        { icon: '🐖', label: '今日识别猪只', value: this.globalStats.today_pigs.toLocaleString() },
+        { icon: 'Camera', label: '识别图片总数', value: this.globalStats.total_images.toLocaleString() },
+        { icon: 'PiggyBank', label: '识别猪只总数', value: this.globalStats.total_pigs.toLocaleString() },
+        { icon: 'Camera', label: '今日识别图片', value: this.globalStats.today_images.toLocaleString() },
+        { icon: 'PiggyBank', label: '今日识别猪只', value: this.globalStats.today_pigs.toLocaleString() },
       ]
     },
     selectedFarmName() {
       if (this.selectedFarmId === null) return null
       const farm = this.farmStats.find(f => f.farm_id === this.selectedFarmId)
       return farm ? (farm.farm_name || '未分配猪场') : null
+    },
+    dateRange() {
+      const now = new Date()
+      const fmt = d => d.toISOString().slice(0, 10)
+      if (this.timeRange === 'today') {
+        const d = fmt(now)
+        return { startDate: d, endDate: d }
+      }
+      if (this.timeRange === 'week') {
+        const start = new Date(now)
+        start.setDate(start.getDate() - start.getDay() + 1)
+        return { startDate: fmt(start), endDate: fmt(now) }
+      }
+      if (this.timeRange === 'month') {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1)
+        return { startDate: fmt(start), endDate: fmt(now) }
+      }
+      if (this.timeRange === 'custom' && this.customStartDate && this.customEndDate) {
+        return { startDate: this.customStartDate, endDate: this.customEndDate }
+      }
+      return { startDate: null, endDate: null }
+    },
+    hasActiveFilters() {
+      return this.timeRange !== 'all' || this.selectedFarmId !== null || this.filterKeyword !== ''
     },
     galleryTotalPages() {
       return Math.ceil(this.galleryTotal / this.galleryPageSize) || 1
@@ -444,6 +523,14 @@ export default {
         this.updateTimeSeriesChart()
       }
     })
+  },
+
+  beforeUnmount() {
+    if (this.timeSeriesChart) {
+      this.timeSeriesChart.stop()
+      this.timeSeriesChart.destroy()
+      this.timeSeriesChart = null
+    }
   },
 
   watch: {
@@ -473,10 +560,10 @@ export default {
           granularity: this.timeSeriesGranularity,
           farmId: this.selectedFarmId
         })
-        console.log('Time series data response:', res)
+        // response received
         if (res && res.success) {
           this.timeSeriesData = res.data
-          console.log('Updated timeSeriesData:', this.timeSeriesData)
+          // data updated
           this.$nextTick(() => {
             this.updateTimeSeriesChart()
           })
@@ -489,21 +576,21 @@ export default {
     },
 
     updateTimeSeriesChart() {
-      console.log('Updating time series chart...')
-      console.log('Data:', this.timeSeriesData)
-      
+
+
+
       // 使用ref获取canvas元素
       const canvasElement = this.$refs.timeSeriesChartRef
-      console.log('Canvas element:', canvasElement)
-      
-      if (!canvasElement) {
-        console.error('Chart canvas element not found')
+
+
+      if (!canvasElement || !canvasElement.isConnected) {
+        console.error('Chart canvas element not found or not connected')
         return
       }
-      
+
       const ctx = canvasElement.getContext('2d')
-      console.log('Chart context:', ctx)
-      
+
+
       if (!ctx) {
         console.error('Failed to get canvas context')
         return
@@ -511,8 +598,10 @@ export default {
 
       // 销毁旧图表
       if (this.timeSeriesChart) {
-        console.log('Destroying old chart')
+
+        this.timeSeriesChart.stop()
         this.timeSeriesChart.destroy()
+        this.timeSeriesChart = null
       }
 
       // 准备数据
@@ -520,9 +609,9 @@ export default {
       const imageData = this.timeSeriesData.map(item => item.images)
       const pigData = this.timeSeriesData.map(item => item.pigs)
       
-      console.log('Labels:', labels)
-      console.log('Image data:', imageData)
-      console.log('Pig data:', pigData)
+
+
+
 
       try {
         // 创建新图表
@@ -552,6 +641,7 @@ export default {
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: false,
             plugins: {
               title: {
                 display: true,
@@ -575,7 +665,7 @@ export default {
             }
           }
         })
-        console.log('Chart created successfully')
+
       } catch (error) {
         console.error('Error creating chart:', error)
       }
@@ -609,6 +699,9 @@ export default {
           farmId: this.selectedFarmId,
           page: this.galleryPage,
           pageSize: this.galleryPageSize,
+          startDate: this.dateRange.startDate,
+          endDate: this.dateRange.endDate,
+          keyword: this.filterKeyword || undefined,
         })
         if (res.success) {
           this.gallery = res.data
@@ -636,6 +729,41 @@ export default {
       this.loadTimeSeriesData()
     },
 
+    onFarmSelectChange() {
+      this.galleryPage = 1
+      this.loadGallery()
+      this.loadTimeSeriesData()
+    },
+
+    setTimeRange(range) {
+      this.timeRange = range
+      this.galleryPage = 1
+      if (range !== 'custom') this.loadGallery()
+    },
+
+    onCustomDateChange() {
+      if (this.customStartDate && this.customEndDate) {
+        this.galleryPage = 1
+        this.loadGallery()
+      }
+    },
+
+    onKeywordSearch() {
+      this.galleryPage = 1
+      this.loadGallery()
+    },
+
+    clearAllFilters() {
+      this.selectedFarmId = null
+      this.timeRange = 'all'
+      this.filterKeyword = ''
+      this.customStartDate = ''
+      this.customEndDate = ''
+      this.galleryPage = 1
+      this.loadGallery()
+      this.loadTimeSeriesData()
+    },
+
     goToPage(page) {
       this.galleryPage = page
       this.loadGallery()
@@ -653,6 +781,16 @@ export default {
     closePreview() {
       this.previewRecord = null
       document.body.style.overflow = ''
+    },
+
+    openFullscreen() {
+      if (this.previewRecord && this.previewRecord.annotated_image) {
+        this.fullscreenSrc = this.previewRecord.annotated_image
+      }
+    },
+
+    closeFullscreen() {
+      this.fullscreenSrc = null
     },
 
     formatDate(dateStr) {
@@ -750,7 +888,7 @@ export default {
   gap: 14px;
 }
 .stats-title-icon {
-  font-size: 36px;
+  color: var(--text-2);
   filter: drop-shadow(0 4px 10px rgba(0,0,0,0.1));
 }
 .stats-title {
@@ -836,7 +974,7 @@ export default {
   background: linear-gradient(135deg, rgba(255,255,255,0.55) 0%, transparent 60%);
   pointer-events: none;
 }
-.summary-card-icon { font-size: 28px; flex-shrink: 0; }
+.summary-card-icon { color: var(--text-2); flex-shrink: 0; }
 .summary-card-val {
   font-size: 30px;
   font-weight: 800;
@@ -951,7 +1089,7 @@ export default {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
-.empty-icon { font-size: 36px; opacity: 0.4; }
+.empty-icon { color: var(--text-4); opacity: 0.4; }
 
 /* ====== 猪场统计表 ====== */
 .farm-stats-table-wrap {
@@ -995,8 +1133,8 @@ export default {
   align-items: center;
   gap: 8px;
 }
-.farm-icon-sm { font-size: 16px; }
-.farm-name-text { font-weight: 600; color: var(--text); }
+.farm-icon-sm { color: var(--text-3); vertical-align: middle; margin-right: 4px; }
+.farm-name-text { font-weight: 600; color: var(--text); max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 
 .num-cell { display: flex; align-items: baseline; gap: 3px; }
 .num-val { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -1036,6 +1174,117 @@ export default {
   box-shadow: 0 2px 10px rgba(0,122,255,0.3);
 }
 .view-btn--active:hover { background: #0068d6; }
+
+/* ====== 筛选栏 ====== */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--sep);
+  flex-wrap: wrap
+}
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px
+}
+.filter-group--search {
+  flex: 1;
+  min-width: 160px
+}
+.filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  flex-shrink: 0
+}
+.filter-chip {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(255,255,255,0.6);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease
+}
+.filter-chip:hover { background: white; border-color: var(--blue); color: var(--blue) }
+.filter-chip--active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+  box-shadow: 0 2px 8px rgba(0,122,255,0.25)
+}
+.filter-chip--active:hover { background: #0068d6; color: white }
+.filter-select {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(255,255,255,0.6);
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  outline: none;
+  min-width: 100px;
+  max-width: 10ch;
+  text-overflow: ellipsis;
+  overflow: hidden
+}
+.filter-select:focus { border-color: var(--blue) }
+.filter-input {
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(255,255,255,0.6);
+  font-size: 12px;
+  color: var(--text-2);
+  outline: none
+}
+.filter-input:focus { border-color: var(--blue) }
+.filter-input::placeholder { color: var(--text-4) }
+.filter-search-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(255,255,255,0.6);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s
+}
+.filter-search-btn:hover { background: white; border-color: var(--blue); color: var(--blue) }
+.filter-clear-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,59,48,0.2);
+  background: rgba(255,59,48,0.06);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--red);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0
+}
+.filter-clear-btn:hover { background: rgba(255,59,48,0.12) }
+.filter-date {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--sep);
+  background: rgba(255,255,255,0.6);
+  font-size: 12px;
+  color: var(--text-2);
+  outline: none;
+  width: 130px
+}
+.filter-date:focus { border-color: var(--blue) }
+.filter-date-sep { font-size: 12px; color: var(--text-4) }
 
 /* ====== 图片回看网格 ====== */
 .gallery-section { animation-delay: 0.3s; }
@@ -1106,12 +1355,12 @@ export default {
   transition: opacity 0.2s ease;
 }
 .gallery-card:hover .gallery-overlay { opacity: 1; }
-.gallery-overlay-icon { font-size: 24px; }
+.gallery-overlay-icon { color: white; }
 
 .gallery-card-info {
   padding: 10px 12px;
 }
-.gallery-count { margin-bottom: 5px; }
+.gallery-count { margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
 .pig-badge {
   font-size: 12px;
   font-weight: 700;
@@ -1120,6 +1369,9 @@ export default {
   color: #34c759;
   border-radius: 6px;
   padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .gallery-meta {
   display: flex;
@@ -1128,6 +1380,16 @@ export default {
   gap: 6px;
   margin-bottom: 4px;
 }
+.conf-badge {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 122, 255, 0.08);
+  border: 1px solid rgba(0, 122, 255, 0.18);
+  color: var(--blue);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-variant-numeric: tabular-nums;
+}
 .gallery-farm {
   font-size: 11px;
   color: var(--blue);
@@ -1135,7 +1397,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 60%;
+  max-width: 15ch;
 }
 .gallery-date {
   font-size: 11px;
@@ -1226,7 +1488,7 @@ export default {
   align-items: center;
   gap: 12px;
 }
-.preview-panel-icon { font-size: 24px; }
+.preview-panel-icon { color: var(--text-2); }
 .preview-panel-name {
   font-size: 15px;
   font-weight: 700;
@@ -1266,7 +1528,27 @@ export default {
   justify-content: center;
   overflow: hidden;
   min-height: 300px;
+  cursor: pointer;
+  position: relative
 }
+.preview-img-overlay {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 8px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none
+}
+.preview-img-area:hover .preview-img-overlay { opacity: 1 }
 .preview-full-img {
   max-width: 100%;
   max-height: 70vh;
@@ -1342,18 +1624,102 @@ export default {
   word-break: break-all;
 }
 
+/* ====== 全屏图片查看（复刻 ImagePreviewModal） ====== */
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px
+}
+.preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(8px)
+}
+.preview-container {
+  position: relative;
+  width: 90vw;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2)
+}
+.preview-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s
+}
+.preview-close:hover {
+  background: rgba(255,255,255,0.2);
+  transform: scale(1.1)
+}
+.preview-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  height: 100%
+}
+.preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5)
+}
+.preview-info {
+  display: flex;
+  gap: 12px
+}
+.preview-badge {
+  padding: 8px 16px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  backdrop-filter: blur(4px)
+}
+
 /* ====== 弹窗动画 ====== */
 .modal-fade-enter-active, .modal-fade-leave-active {
   transition: opacity 0.3s ease;
 }
 .modal-fade-enter-active .preview-panel,
-.modal-fade-leave-active .preview-panel {
+.modal-fade-leave-active .preview-panel,
+.modal-fade-enter-active .preview-container,
+.modal-fade-leave-active .preview-container {
   transition: transform 0.3s var(--spring);
 }
 .modal-fade-enter-from { opacity: 0; }
 .modal-fade-leave-to   { opacity: 0; }
-.modal-fade-enter-from .preview-panel { transform: scale(0.93) translateY(10px); }
-.modal-fade-leave-to   .preview-panel { transform: scale(0.93) translateY(10px); }
+.modal-fade-enter-from .preview-panel,
+.modal-fade-enter-from .preview-container { transform: scale(0.93) translateY(10px); }
+.modal-fade-leave-to .preview-panel,
+.modal-fade-leave-to .preview-container { transform: scale(0.93) translateY(10px); }
 
 /* ====== 图表容器 ====== */
 .chart-container {

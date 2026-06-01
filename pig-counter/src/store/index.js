@@ -1,10 +1,9 @@
-import Vue  from 'vue'
-import Vuex from 'vuex'
+import { createStore } from 'vuex'
 import { getTimeString } from '@/utils/imageUtils'
 
-Vue.use(Vuex)
+let _logSeq = 0
 
-export default new Vuex.Store({
+export default createStore({
   state: {
     // 图片相关
     imageFile:   null,    // File 对象（单张）
@@ -58,7 +57,7 @@ export default new Vuex.Store({
       state.imageMetas = []
       state.currentImageIndex = 0
       state.results = []
-      state.totalPigs = 0
+      state.totalPigs = null
     },
     SET_IMAGES(state, { files, previewUrls, metas }) {
       state.imageFiles = files
@@ -78,7 +77,7 @@ export default new Vuex.Store({
       // 清除旧结果
       state.result = null
       state.results = []
-      state.totalPigs = 0
+      state.totalPigs = null
     },
     SET_CURRENT_IMAGE_INDEX(state, index) {
       state.currentImageIndex = index
@@ -125,7 +124,8 @@ export default new Vuex.Store({
       }
     },
     ADD_LOG(state, { msg, type = 'info' }) {
-      state.logs.unshift({ id: Date.now(), time: getTimeString(), msg, type })
+      if (state.logs.length > 0 && state.logs[0].msg === msg) return
+      state.logs.unshift({ id: ++_logSeq, time: getTimeString(), msg, type })
       if (state.logs.length > 50) state.logs.pop()
     },
     CLEAR_LOGS(state) {

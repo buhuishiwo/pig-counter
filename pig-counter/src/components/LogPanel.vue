@@ -73,5 +73,7 @@ export default {
 .log-msg.warn    { color: #ff9500; }
 
 .log-in-enter-active { transition: all 0.25s ease; }
-.log-in-enter { opacity: 0; transform: translateY(-6px); }
+.log-in-leave-active { transition: all 0.2s ease; }
+.log-in-enter-from { opacity: 0; transform: translateY(-6px); }
+.log-in-leave-to { opacity: 0; transform: translateY(-4px); }
 </style>

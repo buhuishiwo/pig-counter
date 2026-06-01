@@ -112,7 +112,10 @@ export const getDetectionRecordsWithImages = (params = {}) => {
   const transformedParams = {
     farm_id: params.farmId,
     page: params.page,
-    page_size: params.pageSize
+    page_size: params.pageSize,
+    start_date: params.startDate || undefined,
+    end_date: params.endDate || undefined,
+    keyword: params.keyword || undefined,
   }
   return http.get('/detection-records/with-images', { params: transformedParams })
 }

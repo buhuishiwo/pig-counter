@@ -27,6 +27,8 @@ CREATE TABLE `detection_records`  (
   `image_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `predicted_count` int NOT NULL,
   `processing_time_ms` float NOT NULL,
+  `confidence` float DEFAULT 0,
+  `boxes` json DEFAULT NULL,
   `annotated_image` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,

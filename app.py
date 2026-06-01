@@ -12,14 +12,17 @@ from typing import Any
 import cv2
 import numpy as np
 import pymysql
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from ocr import recognize_farm_mark
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-
 SERVICE_DIR = Path(__file__).resolve().parent
+
+load_dotenv(SERVICE_DIR / ".env")
 STATIC_DIR = SERVICE_DIR / "static"
 DEFAULT_MODEL_PATH = SERVICE_DIR / "model" / "pig_count.onnx"
 DEFAULT_HOST = os.getenv("PIG_SERVICE_HOST", "0.0.0.0")
@@ -35,6 +38,10 @@ DB_CONFIG = {
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
 }
+
+_OCR_API_KEY = os.getenv("OCR_API_KEY", "").strip()
+_OCR_BASE_URL = os.getenv("OCR_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+_OCR_MODEL = os.getenv("OCR_MODEL", "qwen-vl-ocr")
 
 _MODEL_LOCK = threading.Lock()
 _MODEL_CACHE: dict[str, cv2.dnn.Net] = {}
@@ -395,13 +402,26 @@ async def predict_batch(
                 imgsz=imgsz,
             )
             
+            # 计算平均置信度
+            avg_confidence = (
+                sum(d.confidence for d in result.detections) / len(result.detections)
+                if result.detections else 0
+            )
+            boxes_data = [
+                {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2,
+                 "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
+                for d in result.detections
+            ] if result.detections else []
+
             # 保存识别记录到数据库
             await save_detection_record(
                 farm_id=farm_id,
                 image_name=file.filename or "unknown.jpg",
                 predicted_count=result.predicted_count,
                 processing_time_ms=result.processing_time_ms,
-                annotated_image=annotated_image
+                annotated_image=annotated_image,
+                confidence=avg_confidence,
+                boxes=boxes_data,
             )
             
             results.append(result)
@@ -426,25 +446,96 @@ async def save_detection_record(
     image_name: str,
     predicted_count: int,
     processing_time_ms: float,
-    annotated_image: np.ndarray
+    annotated_image: np.ndarray,
+    confidence: float = 0,
+    boxes: list[dict] | None = None,
 ) -> None:
     """保存识别记录到数据库（存储压缩缩略图）"""
     try:
+        import json as _json
         thumbnail_base64 = create_thumbnail(annotated_image, max_size=320, quality=60)
+        boxes_json = _json.dumps(boxes, ensure_ascii=False) if boxes else None
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO detection_records 
-                        (farm_id, image_name, predicted_count, processing_time_ms, annotated_image, created_at) 
-                        VALUES (%s, %s, %s, %s, %s, NOW())""",
-                    (farm_id, image_name, predicted_count, processing_time_ms, thumbnail_base64)
+                    """INSERT INTO detection_records
+                        (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes, annotated_image, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                    (farm_id, image_name, predicted_count, processing_time_ms, confidence, boxes_json, thumbnail_base64)
                 )
                 conn.commit()
-                print(f"识别记录保存成功: farm_id={farm_id}, count={predicted_count}")
     except Exception as exc:
         print(f"保存识别记录失败: {exc}")
-        import traceback
-        traceback.print_exc()
+
+
+# ============================================================
+# OCR 标记识别 API
+# ============================================================
+
+class OCRMarkResponse(BaseModel):
+    success: bool
+    text: str | None = None
+    source: str | None = None
+    confidence: float | None = None
+    source_quality: str | None = None
+    suggestions: list[dict[str, Any]] = []
+
+
+@app.post("/api/ocr/farm-mark", response_model=OCRMarkResponse)
+async def ocr_farm_mark(file: UploadFile = File(...)) -> OCRMarkResponse:
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="只支持图片文件")
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="图片大小超过 10MB 限制")
+
+    try:
+        image = decode_image(image_bytes)
+        result = recognize_farm_mark(image)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无法解析图片，请确认文件格式正确")
+    except Exception:
+        return OCRMarkResponse(success=False, text=None, source=None, suggestions=[])
+
+    text = result.get("text")
+    source = result.get("source")
+    confidence = result.get("confidence")
+    source_quality = result.get("source_quality")
+
+    suggestions: list[dict[str, Any]] = []
+    if text:
+        try:
+            with get_db() as conn:
+                with conn.cursor() as cursor:
+                    parts = [p for p in text.replace("-", " ").replace("/", " ").split() if len(p) >= 2]
+                    if parts:
+                        conditions = []
+                        params = []
+                        for part in parts:
+                            conditions.append("name LIKE %s")
+                            params.append(f"%{part}%")
+                        conditions.append("%s LIKE CONCAT('%%', name, '%%')")
+                        params.append(text)
+
+                        sql = (
+                            "SELECT DISTINCT id, name FROM pig_farms"
+                            f" WHERE {' OR '.join(conditions)} LIMIT 5"
+                        )
+                        cursor.execute(sql, params)
+                        for row in cursor.fetchall():
+                            suggestions.append({"farm_id": row["id"], "name": row["name"]})
+        except Exception:
+            pass
+
+    return OCRMarkResponse(
+        success=text is not None,
+        text=text,
+        source=source,
+        confidence=confidence,
+        source_quality=source_quality,
+        suggestions=suggestions,
+    )
 
 
 # ============================================================
@@ -744,6 +835,7 @@ class DetectionRecordWithImageResponse(BaseModel):
     image_name: str
     predicted_count: int
     processing_time_ms: float
+    confidence: float = 0
     annotated_image: str | None  # base64 缩略图
     created_at: datetime
  
@@ -761,6 +853,9 @@ async def get_detection_records_with_images(
     farm_id: int | None = None,
     page: int = 1,
     page_size: int = 12,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    keyword: str | None = None,
 ) -> DetectionRecordWithImageListResponse:
 
     import logging
@@ -788,12 +883,21 @@ async def get_detection_records_with_images(
         with get_db() as conn:
             logger.info("Database connection established")
             with conn.cursor() as cursor:
-                where_clause = ""
+                conditions: list[str] = []
                 params: list = []
                 if farm_id is not None:
-                    where_clause = "WHERE dr.farm_id = %s"
+                    conditions.append("dr.farm_id = %s")
                     params.append(farm_id)
-                    logger.info(f"Added farm_id filter: {farm_id}")
+                if start_date:
+                    conditions.append("dr.created_at >= %s")
+                    params.append(start_date)
+                if end_date:
+                    conditions.append("dr.created_at <= %s")
+                    params.append(end_date + " 23:59:59")
+                if keyword:
+                    conditions.append("dr.image_name LIKE %s")
+                    params.append(f"%{keyword}%")
+                where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
                 # 总数
                 count_sql = f"SELECT COUNT(*) AS total FROM detection_records dr {where_clause}"
@@ -809,7 +913,7 @@ async def get_detection_records_with_images(
                     SELECT
                         dr.id, dr.farm_id, pf.name AS farm_name,
                         dr.image_name, dr.predicted_count,
-                        dr.processing_time_ms, dr.annotated_image, dr.created_at
+                        dr.processing_time_ms, dr.confidence, dr.annotated_image, dr.created_at
                     FROM detection_records dr
                     LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
                     {where_clause}
@@ -829,6 +933,7 @@ async def get_detection_records_with_images(
                         image_name=r["image_name"],
                         predicted_count=r["predicted_count"],
                         processing_time_ms=r["processing_time_ms"],
+                        confidence=float(r.get("confidence") or 0),
                         annotated_image=r["annotated_image"],
                         created_at=r["created_at"],
                     )
@@ -1102,6 +1207,364 @@ async def get_time_series_stats(
         raise HTTPException(
             status_code=500, detail=f"获取时间序列数据失败: {exc}"
         ) from exc
+
+# ============================================================
+# 文件夹批量上传 API（目录结构即身份）
+# ============================================================
+
+from io import BytesIO as _BytesIO
+from collections import OrderedDict as _OrderedDict
+
+
+class BatchUploadResponse(BaseModel):
+    success: bool
+    batch_name: str
+    units: list[dict]
+    total_photos: int
+    total_pigs: int
+    excel_base64: str = ""
+
+
+@app.post("/api/batch/upload")
+async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None)) -> dict:
+    """
+    接收带路径的多文件（前端 webkitdirectory 上传）。
+    从文件相对路径解析 批次/单元/栏舍 三层结构。
+    逐张推理，按单元汇总，返回结果 + Excel。
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="至少需要上传一张图片")
+
+    # 1. 解析路径，建树
+    MAX_BATCH_FILES = 500
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(status_code=400, detail=f"单次最多上传 {MAX_BATCH_FILES} 张图片")
+
+    batch_name = ""
+    unit_order: list[str] = []
+    units: dict[str, list[dict]] = _OrderedDict()  # unit_name → [{name, file}]
+
+    for f in files:
+        path = (f.filename or "").replace("\\", "/")
+        parts = [p for p in path.split("/") if p]
+
+        if len(parts) < 2:
+            continue  # 跳过根目录下的散文件
+
+        if not batch_name:
+            batch_name = parts[0]
+
+        unit_name = parts[1] if len(parts) >= 2 else ""
+        file_name = parts[-1]
+
+        # 跳过栏舍号标识照
+        name_no_ext = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+        if name_no_ext == "栏舍号":
+            continue
+
+        if not f.content_type or not f.content_type.startswith("image/"):
+            continue
+
+        if unit_name not in units:
+            units[unit_name] = []
+            unit_order.append(unit_name)
+
+        units[unit_name].append({"name": file_name, "file": f})
+
+    if not units:
+        raise HTTPException(status_code=400, detail="未找到有效的图片文件（请确认目录结构：批次/单元/栏舍.jpg）")
+
+    # 2. 逐张推理
+    model_path = resolve_model_path()
+    total_photos = 0
+    total_pigs = 0
+    results: list[dict] = []
+    image_paths: list[str] = []  # 用于 Excel 插图
+
+    # 创建临时目录存放原图
+    import tempfile
+    tmp_dir = Path(tempfile.mkdtemp(prefix="pigcount_batch_"))
+
+    for unit_name in unit_order:
+        pens = units[unit_name]
+        unit_pigs = 0
+        unit_results: list[dict] = []
+
+        for pen in pens:
+            result = None
+            try:
+                image_bytes = await pen["file"].read()
+
+                # 保存原图到临时目录
+                img_path = tmp_dir / f"{unit_name}_{pen['name']}"
+                img_path.write_bytes(image_bytes)
+                image_paths.append(str(img_path))
+
+                image = decode_image(image_bytes)
+                result, _annotated = predict_image(
+                    image=image,
+                    model_path=model_path,
+                    conf_threshold=0.25,
+                    iou_threshold=0.45,
+                    imgsz=960,
+                )
+                count = result.predicted_count
+                avg_conf = (
+                    sum(d.confidence for d in result.detections) / len(result.detections)
+                    if result.detections else 0
+                )
+                boxes_for_db = [
+                    {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2,
+                     "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
+                    for d in result.detections
+                ] if result.detections else []
+                await save_detection_record(
+                    farm_id=farm_id,
+                    image_name=pen["name"],
+                    predicted_count=count,
+                    processing_time_ms=result.processing_time_ms,
+                    annotated_image=_annotated,
+                    confidence=avg_conf,
+                    boxes=boxes_for_db,
+                )
+            except Exception:
+                count = 0
+
+            pen_data = {
+                "pen_name": pen["name"],
+                "pig_count": count,
+                "processing_time_ms": result.processing_time_ms if result is not None else 0,
+                "annotated_image": result.annotated_image if result is not None else None,
+                "image_width": result.image_width if result is not None else 0,
+                "image_height": result.image_height if result is not None else 0,
+                "confidence": (
+                    sum(d.confidence for d in result.detections) / len(result.detections)
+                    if result and result.detections else 0
+                ),
+                "boxes": [
+                    {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2,
+                     "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
+                    for d in (result.detections if result else [])
+                ],
+            }
+            unit_results.append(pen_data)
+            unit_pigs += count
+            total_photos += 1
+            total_pigs += count
+
+        results.append({
+            "unit_name": unit_name,
+            "pens": unit_results,
+            "subtotal": unit_pigs,
+        })
+
+    # 3. 生成 Excel（承储单位固定为公司名称）
+    farm_name = "乐清市华统牧业有限公司"
+    excel_b64 = _build_batch_excel(batch_name, results, farm_name, image_paths)
+
+    # 5. 清理临时文件
+    import shutil
+    try:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "batch_name": batch_name,
+        "units": results,
+        "total_photos": total_photos,
+        "total_pigs": total_pigs,
+        "excel_base64": excel_b64,
+    }
+
+
+def _sanitize_excel_text(val: str) -> str:
+    """防止 Excel 公式注入：以 = + - @ 开头的文本加单引号前缀。"""
+    if val and val[0] in "=+-@":
+        return "'" + val
+    return val
+
+
+def _parse_batch_folder(batch_name: str) -> dict:
+    """从文件夹名解析栋舍和楼层，如 '育肥C区2楼1-4单元' → {'building': '育肥C区', 'floor': '2楼'}"""
+    import re
+    # 匹配完整栋舍名（含前缀）+ 楼层
+    m = re.search(r'((?:育肥|保育|种猪)?.+?(?:区|舍))\s*(\d+楼)', batch_name)
+    if m:
+        return {"building": m.group(1).strip(), "floor": m.group(2).strip()}
+    return {"building": batch_name, "floor": ""}
+
+
+def _simplify_unit_name(unit_name: str) -> str:
+    """去掉单元名中的栋舍楼层前缀，如 'C区2楼1单元' → '1单元'"""
+    import re
+    m = re.search(r'(\d+单元)$', unit_name)
+    return m.group(1) if m else unit_name
+
+
+def _extract_pen_number(pen_name: str) -> str:
+    """从栏舍文件名提取数字，如 '10号栏舍.jpg' → '10'"""
+    import re
+    m = re.match(r'(\d+)', pen_name)
+    return m.group(1) if m else pen_name
+
+
+def _build_batch_excel(
+    batch_name: str,
+    units: list[dict],
+    farm_name: str = "乐清市华统牧业有限公司",
+    image_paths: list[str] | None = None,
+) -> str:
+    """基于模板生成 Excel 并返回 base64 字符串。"""
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image as XlImage
+    from openpyxl.styles import Border, Side, Font, Alignment
+    from copy import copy
+    import re
+
+    template_path = Path(__file__).parent / "excel_template.xlsx"
+    wb = load_workbook(str(template_path))
+    ws = wb.active
+
+    folder_info = _parse_batch_folder(batch_name)
+
+    # 0. 先取消所有合并，再删行，避免 openpyxl 内部状态冲突
+    for mg in list(ws.merged_cells.ranges):
+        ws.unmerge_cells(str(mg))
+
+    ws.cell(row=1, column=1, value="市本级活体生猪盘点一览表")
+    ws.merge_cells('A1:J1')
+    ws.delete_rows(2, 1)
+
+    # 删除后行号偏移
+    DATA_START = 3
+    TEMPLATE_DATA_END = 10
+    SUMMARY_ORIG = 11
+
+    # 2. 清除数据区 {{占位符}} + 模板原始汇总行内容
+    for r in range(DATA_START, SUMMARY_ORIG + 1):
+        for c in range(1, 11):
+            cell = ws.cell(row=r, column=c)
+            if isinstance(cell.value, str) and re.match(r'^\{\{.*\}\}$', cell.value):
+                cell.value = None
+    # 清除模板原始汇总行（第11行）的残留内容
+    for c in range(1, 11):
+        ws.cell(row=SUMMARY_ORIG, column=c).value = None
+        for c in range(1, 11):
+            cell = ws.cell(row=r, column=c)
+            if isinstance(cell.value, str) and re.match(r'^\{\{.*\}\}$', cell.value):
+                cell.value = None
+
+    # 2. 展开所有栏舍（简化名称）
+    flat_pens = []
+    total_pigs = 0
+    unit_subtotals = []  # [(unit_name, pen_count, subtotal), ...]
+    for unit in units:
+        simple_name = _simplify_unit_name(unit["unit_name"])
+        pen_count = len(unit["pens"])
+        unit_subtotals.append((simple_name, pen_count, unit["subtotal"]))
+        for pen in unit["pens"]:
+            flat_pens.append({
+                "unit_name": simple_name,
+                "pen_number": _extract_pen_number(pen["pen_name"]),
+                "pig_count": pen["pig_count"],
+            })
+            total_pigs += pen["pig_count"]
+
+    data_count = len(flat_pens)
+
+    # 3. 数据超过8行时插入额外行
+    extra = data_count - 8
+    if extra > 0:
+        ws.insert_rows(SUMMARY_ORIG, amount=extra)
+        for offset in range(extra):
+            new_r = TEMPLATE_DATA_END + 1 + offset
+            for c in range(1, 11):
+                src = ws.cell(row=TEMPLATE_DATA_END, column=c)
+                dst = ws.cell(row=new_r, column=c)
+                dst.border = copy(src.border)
+                dst.font = copy(src.font)
+                dst.alignment = copy(src.alignment)
+
+    # 4. 数据区结束行
+    data_end = DATA_START + data_count - 1
+
+    # 5. 填充数据 + B/C/D 每行写入
+    thin = Side(style="thin")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center")
+
+    # 记录每个 unit 块的起止行
+    cursor = DATA_START
+    unit_row_ranges = []
+    for unit_name, pen_count, subtotal in unit_subtotals:
+        start_r = cursor
+        end_r = cursor + pen_count - 1
+        unit_row_ranges.append((start_r, end_r, unit_name, subtotal))
+        cursor += pen_count
+
+    for i, item in enumerate(flat_pens):
+        r = DATA_START + i
+        ws.cell(row=r, column=1, value=i + 1)
+        ws.cell(row=r, column=2, value=_sanitize_excel_text(farm_name))
+        ws.cell(row=r, column=3, value=_sanitize_excel_text(folder_info["building"]))
+        ws.cell(row=r, column=4, value=_sanitize_excel_text(folder_info["floor"]))
+        ws.cell(row=r, column=5, value=_sanitize_excel_text(item["unit_name"]))
+        ws.cell(row=r, column=6, value=_sanitize_excel_text(item["pen_number"]))
+        ws.cell(row=r, column=7, value=item["pig_count"])
+        # 全框线
+        for c in range(1, 11):
+            ws.cell(row=r, column=c).border = cell_border
+            ws.cell(row=r, column=c).alignment = center
+
+    # 6. E列（所在单元）+ I列（单元总数）按 unit 块合并
+    for start_r, end_r, _, subtotal in unit_row_ranges:
+        if end_r > start_r:
+            ws.merge_cells(start_row=start_r, start_column=5, end_row=end_r, end_column=5)
+            ws.merge_cells(start_row=start_r, start_column=9, end_row=end_r, end_column=9)
+        ws.cell(row=start_r, column=9, value=subtotal)
+
+    # 7. 汇总行：A-D 留空，E:H 合并显示"累计："，I 列显示总数
+    summary_row = data_end + 1
+    for c in range(1, 5):
+        ws.cell(row=summary_row, column=c).value = None
+    ws.merge_cells(start_row=summary_row, start_column=5, end_row=summary_row, end_column=8)
+    ws.cell(row=summary_row, column=5, value="累计：")
+    ws.cell(row=summary_row, column=9, value=total_pigs)
+    for c in range(1, 11):
+        ws.cell(row=summary_row, column=c).border = cell_border
+        ws.cell(row=summary_row, column=c).alignment = center
+
+    # 8. 插入原图到 H 列（Pillow 缩放到 350x210, quality 85）
+    ws.column_dimensions['H'].width = 50
+    ROW_HEIGHT_PT = 160
+    IMG_TARGET_W, IMG_TARGET_H = 350, 210
+
+    if image_paths:
+        thumb_dir = Path(image_paths[0]).parent if image_paths else None
+        for i, img_path in enumerate(image_paths):
+            r = DATA_START + i
+            if r > data_end:
+                break
+            ws.row_dimensions[r].height = ROW_HEIGHT_PT
+            if img_path and Path(img_path).exists():
+                try:
+                    from PIL import Image as PilImage
+                    pil_img = PilImage.open(img_path)
+                    pil_img.thumbnail((IMG_TARGET_W, IMG_TARGET_H), PilImage.LANCZOS)
+                    thumb_path = thumb_dir / f"thumb_{i}.jpg"
+                    pil_img.save(str(thumb_path), quality=100)
+                    xl_img = XlImage(str(thumb_path))
+                    ws.add_image(xl_img, f'H{r}')
+                except Exception:
+                    pass
+
+    buf = _BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
 
 if __name__ == "__main__":
     import uvicorn

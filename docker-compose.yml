@@ -30,6 +30,9 @@ services:
       - DB_USER=root
       - DB_PASSWORD=pig_counterMysql
       - DB_NAME=pig_counter
+      - OCR_API_KEY=${OCR_API_KEY:-}
+      - OCR_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      - OCR_MODEL=qwen-vl-ocr
     depends_on:
       - mysql
     restart: unless-stopped
