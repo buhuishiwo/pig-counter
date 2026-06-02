@@ -1510,7 +1510,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
         })
 
     # 3. 生成 Excel（承储单位固定为公司名称）
-    farm_name = "乐清市华统牧业有限公司"
+    farm_name = "-"
     excel_b64 = _build_batch_excel(batch_name, results, farm_name, image_paths)
 
     # 5. 清理临时文件
@@ -1582,7 +1582,7 @@ async def regenerate_batch_excel(request: dict):
                         continue
                 image_paths.append(None)
 
-        farm_name = "乐清市华统牧业有限公司"
+        farm_name = "-"
         excel_b64 = _build_batch_excel(batch_name, units, farm_name, image_paths)
 
         # 清理临时文件
@@ -1630,7 +1630,7 @@ def _extract_pen_number(pen_name: str) -> str:
 def _build_batch_excel(
     batch_name: str,
     units: list[dict],
-    farm_name: str = "乐清市华统牧业有限公司",
+    farm_name: str = "-",
     image_paths: list[str] | None = None,
 ) -> str:
     """基于模板生成 Excel 并返回 base64 字符串。"""
