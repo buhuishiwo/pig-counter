@@ -1109,19 +1109,34 @@ export default {
       this.batchResults = { ...this.batchResults }
     },
 
-    downloadBatchExcel() {
-      if (!this.batchResults || !this.batchResults.excel_base64) return
+    async downloadBatchExcel() {
+      if (!this.batchResults) return
       this.showNotify('info', '正在生成', 'Excel 导出中…')
-      const byteChars = atob(this.batchResults.excel_base64)
-      const byteArr = Uint8Array.from(byteChars, c => c.charCodeAt(0))
-      const blob = new Blob([byteArr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = (this.batchResults.batch_name || '批次统计') + '.xlsx'
-      a.click()
-      URL.revokeObjectURL(url)
-      this.showNotify('success', '导出成功', `共 ${this.batchResults.total_photos || ''} 张图片`)
+      try {
+        // 动态生成：从数据库取最新标注图
+        const resp = await fetch('/api/batch/regenerate-excel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batch_name: this.batchResults.batch_name,
+            units: this.batchResults.units
+          })
+        })
+        const data = await resp.json()
+        if (!data.success || !data.excel_base64) throw new Error(data.detail || '生成失败')
+        const byteChars = atob(data.excel_base64)
+        const byteArr = Uint8Array.from(byteChars, c => c.charCodeAt(0))
+        const blob = new Blob([byteArr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = (this.batchResults.batch_name || '批次统计') + '.xlsx'
+        a.click()
+        URL.revokeObjectURL(url)
+        this.showNotify('success', '导出成功', `共 ${this.batchResults.total_photos || ''} 张图片`)
+      } catch (e) {
+        this.showNotify('error', '导出失败', e.message)
+      }
     },
 
     clearBatch() {

@@ -1386,7 +1386,6 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             path = file_paths[idx].replace("\\", "/")
         else:
             path = (f.filename or "").replace("\\", "/")
-        print(f"[BATCH] idx={idx}, file_paths_len={len(file_paths)}, path={path}, filename={f.filename}")
         parts = [p for p in path.split("/") if p]
 
         if len(parts) < 2:
@@ -1437,10 +1436,9 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             try:
                 image_bytes = await pen["file"].read()
 
-                # 保存原图到临时目录，用于 Excel 插图
+                # 保存原图到临时目录
                 img_path = tmp_dir / f"{unit_name}_{pen['name']}"
                 img_path.write_bytes(image_bytes)
-                image_paths.append(str(img_path))
 
                 image = decode_image(image_bytes)
                 result, _annotated = predict_image(
@@ -1451,6 +1449,12 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                     imgsz=960,
                 )
                 count = result.predicted_count
+
+                # 保存标注图到临时目录，用于 Excel 插图（带数字标注）
+                import cv2 as _cv2
+                ann_path = tmp_dir / f"ann_{unit_name}_{pen['name']}"
+                _cv2.imwrite(str(ann_path), _annotated)
+                image_paths.append(str(ann_path))
                 avg_conf = (
                     sum(d.confidence for d in result.detections) / len(result.detections)
                     if result.detections else 0
@@ -1460,7 +1464,6 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                      "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
                     for d in result.detections
                 ] if result.detections else []
-                print(f"[BATCH SAVE] image_name={pen['full_path']}, count={count}")
                 record_id = await save_detection_record(
                     farm_id=farm_id,
                     image_name=pen["full_path"],
@@ -1522,6 +1525,72 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
         "total_pigs": total_pigs,
         "excel_base64": excel_b64,
     }
+
+
+@app.post("/api/batch/regenerate-excel")
+async def regenerate_batch_excel(request: dict):
+    """根据最新的 annotated_image 重新生成 Excel"""
+    try:
+        batch_name = request.get("batch_name", "批次统计")
+        units = request.get("units", [])
+        if not units:
+            raise HTTPException(status_code=400, detail="缺少 units 数据")
+
+        # 收集所有 record_id，批量查询最新的 annotated_image
+        record_ids = []
+        for unit in units:
+            for pen in unit.get("pens", []):
+                if pen.get("record_id"):
+                    record_ids.append(pen["record_id"])
+
+        if not record_ids:
+            raise HTTPException(status_code=400, detail="无有效记录")
+
+        placeholders = ",".join(["%s"] * len(record_ids))
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT id, annotated_image FROM detection_records WHERE id IN ({placeholders})",
+                    record_ids
+                )
+                rows = cursor.fetchall()
+                image_map = {r["id"]: r["annotated_image"] for r in rows}
+
+        # 用最新的 annotated_image 生成临时图片文件
+        import tempfile, cv2 as _cv2
+        tmp_dir = Path(tempfile.mkdtemp(prefix="pigcount_excel_"))
+        image_paths = []
+        flat_pens = []
+        for unit in units:
+            for pen in unit.get("pens", []):
+                flat_pens.append(pen)
+                rid = pen.get("record_id")
+                ann_b64 = image_map.get(rid)
+                if ann_b64:
+                    if ann_b64.startswith("data:"):
+                        ann_b64 = ann_b64.split(",")[1]
+                    import base64 as _base64
+                    img_bytes = _base64.b64decode(ann_b64)
+                    img_array = _cv2.imdecode(np.frombuffer(img_bytes, np.uint8), _cv2.IMREAD_COLOR)
+                    if img_array is not None:
+                        ann_path = tmp_dir / f"ann_{rid}.jpg"
+                        _cv2.imwrite(str(ann_path), img_array)
+                        image_paths.append(str(ann_path))
+                        continue
+                image_paths.append(None)
+
+        farm_name = "乐清市华统牧业有限公司"
+        excel_b64 = _build_batch_excel(batch_name, units, farm_name, image_paths)
+
+        # 清理临时文件
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return {"success": True, "excel_base64": excel_b64}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"重新生成 Excel 失败: {exc}")
 
 
 def _sanitize_excel_text(val: str) -> str:
