@@ -294,7 +294,6 @@ export default {
       showImagePreview: false,
       // 猪场相关数据
       farms: [],
-      selectedFarmId: null,
       showFarmModal: false,
       warningFlash: false,
       _latestAnnotatedImage: null,
@@ -338,6 +337,10 @@ export default {
     }
   },
   computed: {
+    selectedFarmId: {
+      get() { return this.$store.state.selectedFarmId },
+      set(val) { this.$store.commit('SET_FARM', val) }
+    },
     hasImage() { return this.$store.getters.hasImage },
     hasResult() { return this.$store.getters.hasResult },
     previewUrl() { return this.$store.state.previewUrl },
@@ -439,8 +442,8 @@ export default {
       return [
         { icon: 'PiggyBank', label: '预测识别数', value: this.hasResult ? (window.__modelOriginalCount || this.pigCount) : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult },
         { icon: 'Zap', label: '处理耗时', value: this.inferenceTime, unit: this.inferenceTime ? 'ms' : null, cls: '', active: !!this.inferenceTime },
-        { icon: 'Target', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: this.confClass, active: this.hasResult },
-        { icon: 'Sparkles', label: '实际识别数', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: '', active: this.hasResult }
+        { icon: 'Target', label: '平均置信度', value: this.hasResult ? this.confidencePct + '%' : null, unit: null, cls: '', active: this.hasResult },
+        { icon: 'Sparkles', label: '实际识别数', value: this.hasResult ? this.pigCount : null, unit: this.hasResult ? '头' : null, cls: 'stat-blue', active: this.hasResult }
       ]
     }
   },

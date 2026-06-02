@@ -18,6 +18,7 @@ export default createStore({
     isAnalyzing:  false,
     uploadProgress: 0,
     autoAnalyze: false,   // 是否自动执行分析
+    selectedFarmId: null,  // 当前选中的猪场 ID
 
     // 结果
     result: null,         // { count, confidence, boxes, inferenceTime }（单张，保持兼容）
@@ -109,6 +110,9 @@ export default createStore({
     },
     SET_ANALYZING(state, val) {
       state.isAnalyzing = val
+    },
+    SET_FARM(state, farmId) {
+      state.selectedFarmId = farmId
     },
     SET_PROGRESS(state, val) {
       state.uploadProgress = val

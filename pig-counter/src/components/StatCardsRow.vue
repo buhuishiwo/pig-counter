@@ -138,6 +138,10 @@ export default {
   color: var(--red)
 }
 
+.stat-num.stat-blue {
+  color: var(--blue)
+}
+
 .stat-unit {
   font-size: 14px;
   color: var(--text-3);
