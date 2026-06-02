@@ -384,11 +384,13 @@ export default {
           if (pen.annotated_image) {
             const img = pen.annotated_image
             const url = img.startsWith('data:') ? img : 'data:image/jpeg;base64,' + img
+            if (!pen.original_pig_count) pen.original_pig_count = pen.pig_count
             images.push({
               url,
               pen_name: pen.pen_name,
               unit_name: unit.unit_name,
               pig_count: pen.pig_count,
+              original_pig_count: pen.original_pig_count,
               confidence: pen.confidence || 0,
               boxes: pen.boxes || [],
               record_id: pen.record_id || null,
@@ -432,11 +434,13 @@ export default {
     },
     statCards() {
       if (this.batchTree) {
+        const img = this.selectedBatchImage
+        const hasBatchResult = !!this.batchResults
         return [
-          { icon: 'Camera', label: '图片数量', value: this.batchResults ? this.batchResults.total_photos : this.batchTree.totalFiles, unit: '张', cls: '', active: true },
-          { icon: 'Folder', label: '单元数量', value: this.batchTree.unitCount, unit: '个', cls: '', active: true },
-          { icon: 'PiggyBank', label: '检测猪只', value: this.batchResults ? this.batchResults.total_pigs : null, unit: this.batchResults ? '头' : null, cls: '', active: !!this.batchResults },
-          { icon: 'Zap', label: '处理耗时', value: this.batchResults ? '2847' : null, unit: this.batchResults ? 'ms' : null, cls: '', active: !!this.batchResults }
+          { icon: 'PiggyBank', label: '预测识别数', value: hasBatchResult && img ? (img.original_pig_count || img.pig_count) : null, unit: hasBatchResult ? '头' : null, cls: '', active: hasBatchResult },
+          { icon: 'Zap', label: '处理耗时', value: hasBatchResult && img ? img.processing_time_ms : null, unit: hasBatchResult ? 'ms' : null, cls: '', active: hasBatchResult },
+          { icon: 'Target', label: '平均置信度', value: hasBatchResult && img ? Math.round(img.confidence * 100) + '%' : null, unit: null, cls: '', active: hasBatchResult },
+          { icon: 'Sparkles', label: '实际识别数', value: hasBatchResult && img ? img.pig_count : null, unit: hasBatchResult ? '头' : null, cls: 'stat-blue', active: hasBatchResult }
         ]
       }
       return [

@@ -22,7 +22,6 @@
         <template v-if="batchMode && selectedBatchImage">
           <span class="img-card-chip">{{ selectedBatchImage.unit_name }}</span>
           <span class="img-card-chip">{{ selectedBatchImage.pen_name }}</span>
-          <span class="img-card-chip chip-green">检测到 {{ selectedBatchImage.pig_count }} 头猪</span>
           <span v-if="batchAnnotatedImages.length > 1" class="img-card-count">
             {{ batchImageIndex + 1 }}/{{ batchAnnotatedImages.length }}
           </span>
