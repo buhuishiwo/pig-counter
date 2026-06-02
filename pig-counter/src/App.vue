@@ -926,6 +926,10 @@ export default {
       if (files.length > 0) this.processFiles(files);
     },
     async processFiles(files) {
+      // 如果在批量模式下选择单张图片，清除批量状态
+      if (this.batchTree) {
+        this.clearBatch()
+      }
       // 验证所有文件
       for (const file of files) {
         const { valid, error } = validateImage(file);
@@ -1023,6 +1027,9 @@ export default {
 
     async runBatchAnalysis() {
       if (!this.batchFiles.length) return
+      // 保存之前的批量结果，取消时恢复
+      const prevBatchResults = this.batchResults ? JSON.parse(JSON.stringify(this.batchResults)) : null
+      const prevBatchImageIndex = this.batchImageIndex
       this.batchProcessing = true
       this.$store.commit('SET_ANALYZING', true)
       this.$store.commit('SET_PROGRESS', 0)
@@ -1086,6 +1093,11 @@ export default {
         if (e.name === 'AbortError') {
           this.closeNotify()
           this.$store.commit('ADD_LOG', { msg: '批量检测已取消', type: 'info' })
+          // 恢复到重新识别之前的状态
+          if (prevBatchResults) {
+            this.batchResults = prevBatchResults
+            this.batchImageIndex = prevBatchImageIndex
+          }
         } else {
           this.closeNotify()
           this.showNotify('error', '批量检测失败', e.message || '请重试')

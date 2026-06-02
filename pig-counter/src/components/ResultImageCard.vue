@@ -45,8 +45,30 @@
     </div>
     <div class="img-card-body">
       <div class="result-zone" :class="{ 'result-zone--active': hasResult || (batchMode && selectedBatchImage), 'result-zone--fill': batchMode }">
+        <!-- 批量模式：扫描中 -->
+        <div v-if="batchMode && batchProcessing"
+          class="result-overlay result-overlay--batch-scanning">
+          <div class="scan-line"></div>
+          <div class="scan-corners">
+            <span class="sc sc-tl"></span>
+            <span class="sc sc-tr"></span>
+            <span class="sc sc-bl"></span>
+            <span class="sc sc-br"></span>
+          </div>
+          <div class="scan-label">
+            <div class="scan-spinner"></div>
+            AI 批量扫描中…
+          </div>
+        </div>
+        <!-- 批量模式：检测完成后显示标注图 -->
+        <div v-else-if="batchMode && selectedBatchImage"
+          class="canvas-wrap" @click="$emit('open-preview')">
+          <img :src="selectedBatchImage.url" class="img-preview img-result-base" alt="batch result" ref="baseImg"
+            @load="onResultImgLoad" />
+          <canvas ref="boxCanvas" class="box-canvas"></canvas>
+        </div>
         <!-- 单图模式：有图片时 -->
-        <div class="canvas-wrap" v-if="hasImage" @click="$emit('open-preview')"
+        <div v-else-if="hasImage" class="canvas-wrap" @click="$emit('open-preview')"
           :class="{ 'canvas-wrap--clickable': hasResult }">
           <img :src="annotatedImage || previewUrl" class="img-preview img-result-base" alt="result" ref="baseImg"
             @load="onResultImgLoad" />
@@ -74,28 +96,6 @@
               </div>
             </div>
           </transition>
-        </div>
-        <!-- 批量模式：检测完成后显示标注图 -->
-        <div class="canvas-wrap" v-else-if="batchMode && selectedBatchImage"
-          @click="$emit('open-preview')">
-          <img :src="selectedBatchImage.url" class="img-preview img-result-base" alt="batch result" ref="baseImg"
-            @load="onResultImgLoad" />
-          <canvas ref="boxCanvas" class="box-canvas"></canvas>
-        </div>
-        <!-- 批量模式：扫描中 -->
-        <div v-else-if="batchMode && batchProcessing"
-          class="result-overlay result-overlay--batch-scanning">
-          <div class="scan-line"></div>
-          <div class="scan-corners">
-            <span class="sc sc-tl"></span>
-            <span class="sc sc-tr"></span>
-            <span class="sc sc-bl"></span>
-            <span class="sc sc-br"></span>
-          </div>
-          <div class="scan-label">
-            <div class="scan-spinner"></div>
-            AI 批量扫描中…
-          </div>
         </div>
         <!-- 无内容占位 -->
         <div v-else class="dropzone-placeholder result-placeholder">
@@ -407,7 +407,7 @@ export default {
 .result-zone--active { border-color: rgba(52, 199, 89, 0.3) }
 .result-zone--fill { flex: 1; min-height: 0; height: auto }
 
-.canvas-wrap { width: 100%; height: 100%; position: relative }
+.canvas-wrap { width: 100%; height: 100%; position: relative; overflow: hidden; border-radius: var(--r-md) }
 .canvas-wrap .img-preview { width: 100%; height: 100%; object-fit: contain }
 .box-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none }
 
@@ -418,12 +418,14 @@ export default {
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(6px)
+  backdrop-filter: blur(6px);
+  border-radius: var(--r-md)
 }
 
 .result-overlay--scanning {
   background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px)
+  backdrop-filter: blur(2px);
+  border-radius: var(--r-md)
 }
 
 .result-overlay--batch-scanning {
@@ -433,7 +435,8 @@ export default {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px)
+  backdrop-filter: blur(2px);
+  border-radius: var(--r-md)
 }
 
 .overlay-content {
