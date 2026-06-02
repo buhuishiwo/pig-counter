@@ -17,6 +17,9 @@
         </div>
       </div>
       <div class="stats-header-right">
+        <div class="last-update" v-if="lastUpdateTime">
+          更新于 {{ lastUpdateTime }}
+        </div>
         <button class="refresh-btn" @click="loadAll" :disabled="loading">
           <svg :class="{ spinning: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
@@ -24,9 +27,6 @@
           </svg>
           <span>{{ loading ? '加载中…' : '刷新数据' }}</span>
         </button>
-        <div class="last-update" v-if="lastUpdateTime">
-          更新于 {{ lastUpdateTime }}
-        </div>
       </div>
     </div>
 
@@ -50,21 +50,9 @@
           <span class="section-title">数据趋势分析</span>
         </div>
         <div class="section-header-right">
-          <div class="granularity-selector">
-            <button 
-              class="granularity-btn" 
-              :class="{ 'granularity-btn--active': timeSeriesGranularity === 'day' }"
-              @click="changeTimeSeriesGranularity('day')"
-            >
-              按日
-            </button>
-            <button 
-              class="granularity-btn" 
-              :class="{ 'granularity-btn--active': timeSeriesGranularity === 'month' }"
-              @click="changeTimeSeriesGranularity('month')"
-            >
-              按月
-            </button>
+          <div class="view-tabs">
+            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'day' }" @click="changeTimeSeriesGranularity('day')">按日</button>
+            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'month' }" @click="changeTimeSeriesGranularity('month')">按月</button>
           </div>
         </div>
       </div>
@@ -129,7 +117,7 @@
               <td>
                 <div class="farm-name-cell">
                   <Warehouse :size="14" class="farm-icon-sm" />
-                  <span class="farm-name-text">{{ farm.farm_name || '未分配猪场' }}</span>
+                  <span class="farm-name-text" @mouseenter="checkTooltip($event)" @mouseleave="hideTooltip()">{{ (farm.farm_name || '未分配猪场').length > 11 ? (farm.farm_name || '未分配猪场').slice(0, 11) + '...' : (farm.farm_name || '未分配猪场') }}</span>
                 </div>
               </td>
               <td>
@@ -139,26 +127,24 @@
                 </div>
               </td>
               <td>
-                <div class="num-cell num-cell--highlight">
+                <div class="num-cell">
                   <span class="num-val">{{ farm.total_pigs }}</span>
                   <span class="num-unit">头</span>
                 </div>
               </td>
               <td>
                 <div class="num-cell">
-                  <span class="num-val today-val">{{ farm.today_images }}</span>
+                  <span class="num-val">{{ farm.today_images }}</span>
                   <span class="num-unit">张</span>
                 </div>
               </td>
               <td>
                 <div class="num-cell">
-                  <span class="num-val today-val">{{ farm.today_pigs }}</span>
+                  <span class="num-val">{{ farm.today_pigs }}</span>
                   <span class="num-unit">头</span>
                 </div>
               </td>
-              <td>
-                <span class="time-chip">{{ farm.avg_processing_time_ms }} ms</span>
-              </td>
+              <td class="avg-time-text">{{ farm.avg_processing_time_ms }} ms</td>
               <td>
                 <span class="date-text">{{ formatDate(farm.last_detection_at) }}</span>
               </td>
@@ -190,22 +176,27 @@
       <!-- 筛选栏 -->
       <div class="filter-bar">
         <div class="filter-group">
-          <span class="filter-label">时间</span>
-          <button v-for="r in [{k:'today',l:'今天'},{k:'week',l:'本周'},{k:'month',l:'本月'},{k:'custom',l:'自定义'},{k:'all',l:'全部'}]"
-            :key="r.k" class="filter-chip" :class="{ 'filter-chip--active': timeRange === r.k }"
-            @click="setTimeRange(r.k)">{{ r.l }}</button>
-        <template v-if="timeRange === 'custom'">
-          <input type="date" class="filter-date" v-model="customStartDate" @change="onCustomDateChange" />
-          <span class="filter-date-sep">—</span>
-          <input type="date" class="filter-date" v-model="customEndDate" @change="onCustomDateChange" />
-        </template>
-        </div>
-        <div class="filter-group">
-          <span class="filter-label">猪场</span>
-          <select class="filter-select" v-model="selectedFarmId" @change="onFarmSelectChange">
-            <option :value="null">全部猪场</option>
-            <option v-for="f in farmStats" :key="f.farm_id" :value="f.farm_id">{{ f.farm_name || '未分配' }}</option>
-          </select>
+          <div class="antd-select" :class="{ 'antd-select--open': farmDropdownOpen }" @click.stop="farmDropdownOpen = !farmDropdownOpen">
+            <div class="antd-select-selector">
+              <span class="antd-select-selection-item" :class="{ 'antd-select-selection-placeholder': !selectedFarmId }">
+                {{ truncateFarm(selectedFarmId ? (farmStats.find(f => f.farm_id === selectedFarmId)?.farm_name || '未分配') : '全部猪场') }}
+              </span>
+              <span class="antd-select-arrow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <span v-if="selectedFarmId" class="antd-select-clear" @click.stop="selectedFarmId = null; onFarmSelectChange(); farmDropdownOpen = false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </span>
+            </div>
+            <transition name="dropdown-fade">
+              <div v-if="farmDropdownOpen" class="antd-select-dropdown" @click.stop>
+                <div class="antd-select-item" :class="{ 'antd-select-item--selected': !selectedFarmId }" @click="selectedFarmId = null; onFarmSelectChange(); farmDropdownOpen = false">全部猪场</div>
+                <div v-for="f in farmStats" :key="f.farm_id" class="antd-select-item" :class="{ 'antd-select-item--selected': selectedFarmId === f.farm_id }" @click="selectedFarmId = f.farm_id; onFarmSelectChange(); farmDropdownOpen = false">
+                  {{ truncateFarm(f.farm_name || '未分配') }}
+                </div>
+              </div>
+            </transition>
+          </div>
         </div>
         <div class="filter-group filter-group--search">
           <input class="filter-input" v-model="filterKeyword" placeholder="搜索文件名…" @keyup.enter="onKeywordSearch" />
@@ -213,7 +204,91 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
         </div>
-        <button v-if="hasActiveFilters" class="filter-clear-btn" @click="clearAllFilters">重置</button>
+        <div class="filter-group filter-group--time">
+          <button v-for="r in [{k:'today',l:'今天'},{k:'week',l:'本周'},{k:'month',l:'本月'},{k:'all',l:'全部'}]"
+            :key="r.k" class="filter-chip" :class="{ 'filter-chip--active': timeRange === r.k }"
+            @click="setTimeRange(r.k)">{{ r.l }}</button>
+          <div class="antd-range-picker" :class="{ 'antd-range-picker--focused': rangePickerOpen }" @click.stop="rangePickerOpen = !rangePickerOpen">
+            <div class="antd-range-picker-input-wrapper">
+              <input class="antd-range-picker-input" :value="customStartDate ? formatDateCN(customStartDate) : ''" placeholder="开始日期" readonly />
+              <span class="antd-range-picker-separator">~</span>
+              <input class="antd-range-picker-input" :value="customEndDate ? formatDateCN(customEndDate) : ''" placeholder="结束日期" readonly />
+              <span class="antd-range-picker-suffix">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+            </div>
+            <transition name="dropdown-fade">
+              <div v-if="rangePickerOpen" class="antd-range-picker-dropdown" @click.stop>
+                <div class="cal-panels">
+                  <!-- 左面板：开始月份 -->
+                  <div class="cal-panel">
+                    <div class="cal-panel-header">
+                      <button class="cal-nav-btn" @click="calLeftMonth--">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                      </button>
+                      <span class="cal-panel-title">{{ calLeftYear }}年{{ calLeftMonth + 1 }}月</span>
+                      <span class="cal-nav-btn cal-nav-placeholder"></span>
+                    </div>
+                    <div class="cal-weekdays">
+                      <span v-for="d in ['日','一','二','三','四','五','六']" :key="d" class="cal-weekday">{{ d }}</span>
+                    </div>
+                    <div class="cal-grid">
+                      <div v-for="(day, i) in leftCalendarDays" :key="i"
+                        class="cal-day"
+                        :class="{
+                          'cal-day--other': !day.current,
+                          'cal-day--today': day.isToday,
+                          'cal-day--range-start': day.dateStr === customStartDate && customEndDate,
+                          'cal-day--range-end': day.dateStr === customEndDate && customStartDate,
+                          'cal-day--in-range': customStartDate && customEndDate && day.dateStr > customStartDate && day.dateStr < customEndDate,
+                          'cal-day--selected': day.dateStr === customStartDate || day.dateStr === customEndDate
+                        }"
+                        @click="onCalDayClick(day.dateStr)"
+                      >{{ day.day }}</div>
+                    </div>
+                  </div>
+                  <!-- 右面板：结束月份 -->
+                  <div class="cal-panel">
+                    <div class="cal-panel-header">
+                      <span class="cal-nav-btn cal-nav-placeholder"></span>
+                      <span class="cal-panel-title">{{ calRightYear }}年{{ calRightMonth + 1 }}月</span>
+                      <button class="cal-nav-btn" @click="calLeftMonth++">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
+                    </div>
+                    <div class="cal-weekdays">
+                      <span v-for="d in ['日','一','二','三','四','五','六']" :key="d" class="cal-weekday">{{ d }}</span>
+                    </div>
+                    <div class="cal-grid">
+                      <div v-for="(day, i) in rightCalendarDays" :key="i"
+                        class="cal-day"
+                        :class="{
+                          'cal-day--other': !day.current,
+                          'cal-day--today': day.isToday,
+                          'cal-day--range-start': day.dateStr === customStartDate && customEndDate,
+                          'cal-day--range-end': day.dateStr === customEndDate && customStartDate,
+                          'cal-day--in-range': customStartDate && customEndDate && day.dateStr > customStartDate && day.dateStr < customEndDate,
+                          'cal-day--selected': day.dateStr === customStartDate || day.dateStr === customEndDate
+                        }"
+                        @click="onCalDayClick(day.dateStr)"
+                      >{{ day.day }}</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="antd-range-picker-footer">
+                  <div class="cal-selected-info" v-if="customStartDate">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {{ formatDateCN(customStartDate) }}{{ customEndDate ? ' → ' + formatDateCN(customEndDate) : ' → 选择结束日期' }}
+                  </div>
+                  <div class="cal-footer-btns">
+                    <button class="antd-range-picker-reset" @click="customStartDate = ''; customEndDate = ''">重置</button>
+                    <button class="antd-range-picker-ok" @click="onCustomDateChange(); rangePickerOpen = false; timeRange = 'custom'">确定</button>
+                  </div>
+                </div>
+              </div>
+            </transition>
+          </div>
+        </div>
       </div>
 
       <div v-if="galleryLoading" class="loading-state">
@@ -257,7 +332,7 @@
                 <span class="conf-badge" v-if="record.confidence">{{ Math.round(record.confidence * 100) }}%</span>
               </div>
               <div class="gallery-meta">
-                <span class="gallery-farm" v-if="record.farm_name">{{ record.farm_name }}</span>
+                <span class="gallery-farm" v-if="record.farm_name" @mouseenter="checkTooltip($event)" @mouseleave="hideTooltip()">{{ record.farm_name.length > 11 ? record.farm_name.slice(0, 11) + '...' : record.farm_name }}</span>
                 <span class="gallery-date">{{ formatDateShort(record.created_at) }}</span>
               </div>
               <div class="gallery-filename" :title="record.image_name">{{ record.image_name }}</div>
@@ -403,6 +478,7 @@
       <span class="footer-dot">·</span>
       <span>© {{ year }}</span>
     </footer>
+    <div v-if="tooltipVisible" class="custom-tooltip" :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }">{{ tooltipText }}</div>
   </div>
 </template>
 
@@ -446,6 +522,16 @@ export default {
 
       // 筛选条件
       timeRange: 'all',
+      farmDropdownOpen: false,
+      rangePickerOpen: false,
+      calYear: new Date().getFullYear(),
+      calMonth: new Date().getMonth(),
+      calLeftMonth: new Date().getMonth(),
+      calLeftYear: new Date().getFullYear(),
+      tooltipVisible: false,
+      tooltipText: '',
+      tooltipX: 0,
+      tooltipY: 0,
       filterKeyword: '',
       customStartDate: '',
       customEndDate: '',
@@ -459,6 +545,18 @@ export default {
   },
 
   computed: {
+    calRightYear() {
+      return this.calLeftMonth === 11 ? this.calLeftYear + 1 : this.calLeftYear
+    },
+    calRightMonth() {
+      return this.calLeftMonth === 11 ? 0 : this.calLeftMonth + 1
+    },
+    leftCalendarDays() {
+      return this._buildCalendarDays(this.calLeftYear, this.calLeftMonth)
+    },
+    rightCalendarDays() {
+      return this._buildCalendarDays(this.calRightYear, this.calRightMonth)
+    },
     year() {
       return new Date().getFullYear()
     },
@@ -519,15 +617,17 @@ export default {
   },
 
   mounted() {
-    // 组件挂载后初始化图表
     this.$nextTick(() => {
       if (this.timeSeriesData.length > 0) {
         this.updateTimeSeriesChart()
       }
     })
+    this._closeDropdown = () => { this.farmDropdownOpen = false; this.rangePickerOpen = false }
+    document.addEventListener('click', this._closeDropdown)
   },
 
   beforeUnmount() {
+    document.removeEventListener('click', this._closeDropdown)
     if (this.timeSeriesChart) {
       this.timeSeriesChart.stop()
       this.timeSeriesChart.destroy()
@@ -562,61 +662,99 @@ export default {
           granularity: this.timeSeriesGranularity,
           farmId: this.selectedFarmId
         })
-        // response received
         if (res && res.success) {
           this.timeSeriesData = res.data
-          // data updated
-          this.$nextTick(() => {
-            this.updateTimeSeriesChart()
-          })
         } else {
-          console.error('Invalid response format:', res)
           this.timeSeriesData = []
         }
-      } catch (e) { console.error(e) }
-      finally { this.timeSeriesLoading = false }
+      } catch (e) { console.error(e); this.timeSeriesData = [] }
+      finally {
+        this.timeSeriesLoading = false
+        // 等待 DOM 更新完成后再创建 chart，避免 canvas 未就绪
+        await this.$nextTick()
+        if (this.$refs.timeSeriesChartRef) {
+          this.updateTimeSeriesChart()
+        }
+      }
     },
 
     updateTimeSeriesChart() {
-
-
-
-      // 使用ref获取canvas元素
       const canvasElement = this.$refs.timeSeriesChartRef
-
-
-      if (!canvasElement || !canvasElement.isConnected) {
-        console.error('Chart canvas element not found or not connected')
-        return
-      }
-
+      if (!canvasElement || !canvasElement.isConnected) return
       const ctx = canvasElement.getContext('2d')
+      if (!ctx) return
 
-
-      if (!ctx) {
-        console.error('Failed to get canvas context')
-        return
-      }
-
-      // 销毁旧图表
       if (this.timeSeriesChart) {
-
         this.timeSeriesChart.stop()
         this.timeSeriesChart.destroy()
         this.timeSeriesChart = null
       }
+      // 清理旧的鼠标事件监听
+      if (this._chartMouseListeners) {
+        this._chartMouseListeners.forEach(({ el, event, fn }) => el.removeEventListener(event, fn))
+        this._chartMouseListeners = null
+      }
 
-      // 准备数据
       const labels = this.timeSeriesData.map(item => item.date)
       const imageData = this.timeSeriesData.map(item => item.images)
       const pigData = this.timeSeriesData.map(item => item.pigs)
-      
 
+      // 创建渐变填充（延伸到 y=0）
+      const greenGrad = ctx.createLinearGradient(0, 0, 0, canvasElement.height)
+      greenGrad.addColorStop(0, 'rgba(34, 197, 94, 0.38)')
+      greenGrad.addColorStop(0.3, 'rgba(34, 197, 94, 0.22)')
+      greenGrad.addColorStop(0.6, 'rgba(34, 197, 94, 0.10)')
+      greenGrad.addColorStop(1, 'rgba(34, 197, 94, 0.04)')
 
+      const blueGrad = ctx.createLinearGradient(0, 0, 0, canvasElement.height)
+      blueGrad.addColorStop(0, 'rgba(59, 130, 246, 0.32)')
+      blueGrad.addColorStop(0.3, 'rgba(59, 130, 246, 0.18)')
+      blueGrad.addColorStop(0.6, 'rgba(59, 130, 246, 0.08)')
+      blueGrad.addColorStop(1, 'rgba(59, 130, 246, 0.04)')
 
+      // 十字线 plugin + 鼠标跟踪
+      const crosshairPlugin = {
+        id: 'crosshair',
+        afterDraw(chart) {
+          try {
+            const { ctx, chartArea } = chart
+            if (!ctx || !chartArea) return
+            const mouseX = chart._crosshairX
+            if (mouseX == null || mouseX < chartArea.left || mouseX > chartArea.right) return
+
+            // 画十字线
+            ctx.save()
+            ctx.beginPath()
+            ctx.setLineDash([5, 4])
+            ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)'
+            ctx.lineWidth = 1
+            ctx.moveTo(mouseX, chartArea.top)
+            ctx.lineTo(mouseX, chartArea.bottom)
+            ctx.stroke()
+            ctx.restore()
+          } catch (e) { /* ignore */ }
+        }
+      }
+
+      // 绑定鼠标事件：进入区域即显示十字线
+      const onMouseMove = (e) => {
+        const rect = canvasElement.getBoundingClientRect()
+        // CSS 像素坐标（Chart.js chartArea 用的是 CSS 像素）
+        this.timeSeriesChart._crosshairX = e.clientX - rect.left
+        this.timeSeriesChart.draw()
+      }
+      const onMouseLeave = () => {
+        this.timeSeriesChart._crosshairX = null
+        this.timeSeriesChart.draw()
+      }
+      canvasElement.addEventListener('mousemove', onMouseMove)
+      canvasElement.addEventListener('mouseleave', onMouseLeave)
+      this._chartMouseListeners = [
+        { el: canvasElement, event: 'mousemove', fn: onMouseMove },
+        { el: canvasElement, event: 'mouseleave', fn: onMouseLeave }
+      ]
 
       try {
-        // 创建新图表
         this.timeSeriesChart = new Chart(ctx, {
           type: 'line',
           data: {
@@ -625,49 +763,96 @@ export default {
               {
                 label: '上传图片数',
                 data: imageData,
-                borderColor: '#007aff',
-                backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                borderColor: '#3B82F6',
+                backgroundColor: blueGrad,
                 tension: 0.4,
-                fill: true
+                fill: true,
+                pointBackgroundColor: '#3B82F6',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                borderWidth: 2.5
               },
               {
                 label: '识别猪只数',
                 data: pigData,
-                borderColor: '#34c759',
-                backgroundColor: 'rgba(52, 199, 89, 0.1)',
+                borderColor: '#22C55E',
+                backgroundColor: greenGrad,
                 tension: 0.4,
-                fill: true
+                fill: true,
+                pointBackgroundColor: '#22C55E',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                borderWidth: 2.5
               }
             ]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false, axis: 'x' },
             animation: false,
             plugins: {
               title: {
                 display: true,
                 text: this.timeSeriesGranularity === 'day' ? '每日数据统计' : '每月数据统计',
-                font: {
-                  size: 14,
-                  weight: '600'
-                }
+                font: { size: 16, weight: '600' },
+                color: '#1e293b',
+                padding: { bottom: 16 }
               },
               legend: {
-                position: 'top'
+                position: 'top',
+                align: 'end',
+                labels: {
+                  usePointStyle: true,
+                  pointStyle: 'circle',
+                  padding: 16,
+                  font: { size: 13, weight: 'normal' },
+                  color: '#475569'
+                }
+              },
+              tooltip: {
+                backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                titleFont: { size: 13, weight: '600' },
+                bodyFont: { size: 13 },
+                padding: 14,
+                cornerRadius: 10,
+                usePointStyle: true,
+                pointStyle: 'circle',
+                boxPadding: 6
               }
             },
             scales: {
               y: {
                 beginAtZero: true,
                 ticks: {
-                  precision: 0
-                }
+                  precision: 0,
+                  color: '#94a3b8',
+                  font: { size: 11 },
+                  padding: 8
+                },
+                grid: {
+                  color: '#f1f5f9',
+                  drawBorder: false
+                },
+                border: { display: false }
+              },
+              x: {
+                ticks: {
+                  color: '#94a3b8',
+                  font: { size: 11 },
+                  padding: 8
+                },
+                grid: { display: false },
+                border: { display: false }
               }
             }
-          }
+          },
+          plugins: [crosshairPlugin]
         })
-
       } catch (error) {
         console.error('Error creating chart:', error)
       }
@@ -809,6 +994,64 @@ export default {
         month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit',
       })
+    },
+    formatDateCN(dateStr) {
+      if (!dateStr) return ''
+      const d = new Date(dateStr)
+      return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+    },
+    _fmtDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    },
+    checkTooltip(e) {
+      const el = e.target
+      const fullText = el.getAttribute('data-full') || el.textContent
+      // 判断文字是否被截断（含 ... 说明被截断了）
+      if (fullText.length > 11 || el.textContent.includes('...')) {
+        const rect = el.getBoundingClientRect()
+        this.tooltipText = fullText.replace(/\.\.\.$/, '')
+        this.tooltipX = rect.left + rect.width / 2
+        this.tooltipY = rect.top - 8
+        this.tooltipVisible = true
+      }
+    },
+    hideTooltip() {
+      this.tooltipVisible = false
+    },
+    truncateFarm(name) {
+      return name && name.length > 11 ? name.slice(0, 11) + '...' : name
+    },
+    _buildCalendarDays(y, m) {
+      const firstDay = new Date(y, m, 1).getDay()
+      const daysInMonth = new Date(y, m + 1, 0).getDate()
+      const daysInPrev = new Date(y, m, 0).getDate()
+      const today = new Date()
+      const todayStr = this._fmtDate(today)
+      const days = []
+      for (let i = firstDay - 1; i >= 0; i--) {
+        const d = daysInPrev - i
+        days.push({ day: d, current: false, dateStr: this._fmtDate(new Date(y, m - 1, d)), isToday: false })
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+        days.push({ day: d, current: true, dateStr, isToday: dateStr === todayStr })
+      }
+      const remaining = 42 - days.length
+      for (let d = 1; d <= remaining; d++) {
+        days.push({ day: d, current: false, dateStr: this._fmtDate(new Date(y, m + 1, d)), isToday: false })
+      }
+      return days
+    },
+    onCalDayClick(dateStr) {
+      if (!this.customStartDate || (this.customStartDate && this.customEndDate)) {
+        this.customStartDate = dateStr
+        this.customEndDate = ''
+      } else if (dateStr < this.customStartDate) {
+        this.customEndDate = this.customStartDate
+        this.customStartDate = dateStr
+      } else {
+        this.customEndDate = dateStr
+      }
     },
   },
 }
@@ -1045,9 +1288,9 @@ export default {
 .section-badge {
   font-size: 11px;
   font-weight: 500;
-  background: rgba(0,122,255,0.08);
-  border: 1px solid rgba(0,122,255,0.15);
-  color: var(--blue);
+  background: var(--blue);
+  border: 1px solid var(--blue);
+  color: white;
   border-radius: 20px;
   padding: 3px 10px;
 }
@@ -1136,7 +1379,7 @@ export default {
   gap: 8px;
 }
 .farm-icon-sm { color: var(--text-3); vertical-align: middle; margin-right: 4px; }
-.farm-name-text { font-weight: 600; color: var(--text); max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.farm-name-text { font-weight: 600; color: var(--text); white-space: nowrap; max-width: 11ch; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; min-width: 0 }
 
 .num-cell { display: flex; align-items: baseline; gap: 3px; }
 .num-val { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -1154,21 +1397,22 @@ export default {
   padding: 3px 8px;
   font-variant-numeric: tabular-nums;
 }
-.date-text { font-size: 12px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.date-text { font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.avg-time-text { font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 
 .view-btn {
   font-size: 12px;
   font-weight: 600;
   padding: 6px 14px;
   border-radius: 8px;
-  border: 1px solid rgba(0,122,255,0.25);
-  background: rgba(0,122,255,0.06);
-  color: var(--blue);
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: white;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
-.view-btn:hover { background: rgba(0,122,255,0.12); transform: translateY(-1px); }
+.view-btn:hover { background: #0068d6; transform: translateY(-1px); }
 .view-btn--active {
   background: var(--blue);
   color: white;
@@ -1192,21 +1436,170 @@ export default {
   gap: 6px
 }
 .filter-group--search {
-  flex: 1;
-  min-width: 160px
+  max-width: 220px;
+  margin-left: 0
 }
-.filter-label {
+.filter-group--time {
+  margin-left: auto
+}
+
+/* Ant Design 风格 RangePicker */
+.antd-range-picker {
+  position: relative;
+  font-size: 13px;
+}
+.antd-range-picker-input-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 6px;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  transition: all 0.2s;
+  min-height: 32px;
+  gap: 4px;
+}
+.antd-range-picker:hover .antd-range-picker-input-wrapper { border-color: var(--blue) }
+.antd-range-picker--focused .antd-range-picker-input-wrapper { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(0,122,255,0.1) }
+.antd-range-picker-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text);
+  width: 95px;
+  text-align: center;
+  font-family: inherit;
+}
+.antd-range-picker-input::placeholder { color: #bfbfbf }
+.antd-range-picker-separator { color: #bfbfbf; font-size: 12px; padding: 0 2px }
+.antd-range-picker-suffix { color: #bfbfbf; margin-left: 4px; flex-shrink: 0; display: flex }
+.antd-range-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  padding: 0;
+  z-index: 1000;
+}
+.cal-panels {
+  display: flex;
+  gap: 0;
+}
+.cal-panel {
+  padding: 8px 12px;
+  min-width: 280px;
+}
+.cal-panel:first-child { border-right: 1px solid #f0f0f0 }
+.cal-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 10px;
+}
+.cal-panel-title { font-size: 13px; font-weight: 600; color: var(--text-2) }
+.cal-nav-placeholder { width: 24px; height: 24px }
+.cal-nav-btn {
+  width: 24px; height: 24px;
+  border: none; background: transparent;
+  border-radius: 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); transition: all 0.15s;
+}
+.cal-nav-btn:hover { background: rgba(0,0,0,0.04); color: var(--text) }
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 8px 8px 4px;
+}
+.cal-weekday {
+  text-align: center;
   font-size: 12px;
+  color: var(--text-4);
+  font-weight: 500;
+  padding: 2px 0;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 0 8px 8px;
+  gap: 2px;
+}
+.cal-day {
+  text-align: center;
+  font-size: 13px;
+  padding: 6px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  transition: all 0.1s;
+  user-select: none;
+}
+.cal-day:hover { background: rgba(0,122,255,0.08) }
+.cal-day--other { color: var(--text-4) }
+.cal-day--today { color: var(--blue); font-weight: 700 }
+.cal-day--selected {
+  background: var(--blue);
+  color: white;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.cal-day--range-start { border-radius: 6px 0 0 6px }
+.cal-day--range-end { border-radius: 0 6px 6px 0 }
+.cal-day--in-range {
+  background: rgba(0,122,255,0.1);
+  border-radius: 0;
+}
+.cal-selected-info {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.cal-footer-btns { display: flex; gap: 8px }
+.antd-range-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid #f0f0f0;
+}
+.antd-range-picker-ok {
+  padding: 4px 16px;
+  border-radius: 6px;
+  border: none;
+  background: var(--blue);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.antd-range-picker-ok:hover { background: #0068d6 }
+.antd-range-picker-reset {
+  padding: 4px 16px;
+  border-radius: 6px;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.antd-range-picker-reset:hover { border-color: var(--blue); color: var(--blue) }
+
+.filter-label {
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-3);
   flex-shrink: 0
 }
 .filter-chip {
-  padding: 4px 12px;
-  border-radius: 6px;
+  padding: 5px 14px;
+  border-radius: 7px;
   border: 1px solid var(--sep);
   background: rgba(255,255,255,0.6);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-2);
   cursor: pointer;
@@ -1220,37 +1613,90 @@ export default {
   box-shadow: 0 2px 8px rgba(0,122,255,0.25)
 }
 .filter-chip--active:hover { background: #0068d6; color: white }
-.filter-select {
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--sep);
-  background: rgba(255,255,255,0.6);
-  font-size: 12px;
-  color: var(--text-2);
+/* Ant Design 风格 Select */
+.antd-select {
+  position: relative;
+  width: 180px;
+  font-size: 13px;
   cursor: pointer;
-  outline: none;
-  min-width: 100px;
-  max-width: 10ch;
-  text-overflow: ellipsis;
-  overflow: hidden
 }
-.filter-select:focus { border-color: var(--blue) }
+.antd-select-selector {
+  display: flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  transition: all 0.2s;
+  min-height: 32px;
+}
+.antd-select:hover .antd-select-selector { border-color: var(--blue); }
+.antd-select--open .antd-select-selector { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+.antd-select-selection-item {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.antd-select-selection-placeholder { color: #bfbfbf }
+.antd-select-arrow {
+  color: #bfbfbf;
+  font-size: 10px;
+  margin-left: 4px;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.antd-select--open .antd-select-arrow { transform: rotate(180deg) }
+.antd-select-clear {
+  display: none;
+  color: #bfbfbf;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.antd-select:hover .antd-select-clear { display: flex }
+.antd-select:hover .antd-select-arrow { display: none }
+.antd-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  padding: 4px 0;
+  z-index: 1000;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.antd-select-item {
+  padding: 5px 12px;
+  color: var(--text);
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.antd-select-item:hover { background: rgba(0,0,0,0.04) }
+.antd-select-item--selected { color: var(--blue); font-weight: 600; background: rgba(0,122,255,0.06) }
+.dropdown-fade-enter-active, .dropdown-fade-leave-active { transition: opacity 0.15s, transform 0.15s }
+.dropdown-fade-enter-from, .dropdown-fade-leave-to { opacity: 0; transform: translateY(-4px) }
 .filter-input {
   width: 100%;
-  padding: 5px 10px;
-  border-radius: 6px;
+  padding: 6px 12px;
+  border-radius: 7px;
   border: 1px solid var(--sep);
   background: rgba(255,255,255,0.6);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   outline: none
 }
 .filter-input:focus { border-color: var(--blue) }
 .filter-input::placeholder { color: var(--text-4) }
 .filter-search-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
   border: 1px solid var(--sep);
   background: rgba(255,255,255,0.6);
   color: var(--text-3);
@@ -1263,11 +1709,11 @@ export default {
 }
 .filter-search-btn:hover { background: white; border-color: var(--blue); color: var(--blue) }
 .filter-clear-btn {
-  padding: 4px 12px;
-  border-radius: 6px;
+  padding: 5px 14px;
+  border-radius: 7px;
   border: 1px solid rgba(255,59,48,0.2);
   background: rgba(255,59,48,0.06);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--red);
   cursor: pointer;
@@ -1276,17 +1722,17 @@ export default {
 }
 .filter-clear-btn:hover { background: rgba(255,59,48,0.12) }
 .filter-date {
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
   border: 1px solid var(--sep);
   background: rgba(255,255,255,0.6);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   outline: none;
   width: 130px
 }
 .filter-date:focus { border-color: var(--blue) }
-.filter-date-sep { font-size: 12px; color: var(--text-4) }
+.filter-date-sep { font-size: 13px; color: var(--text-4) }
 
 /* ====== 图片回看网格 ====== */
 .gallery-section { animation-delay: 0.3s; }
@@ -1396,10 +1842,7 @@ export default {
   font-size: 11px;
   color: var(--blue);
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 15ch;
 }
 .gallery-date {
   font-size: 11px;
@@ -1731,45 +2174,39 @@ export default {
 
 /* ====== 图表容器 ====== */
 .chart-container {
-  padding: 20px;
+  padding: 20px 24px 24px;
   height: 400px;
 }
 
 /* ====== 粒度选择器 ====== */
-.granularity-selector {
+.view-tabs {
   display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.granularity-btn {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 14px;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.04);
   border-radius: 8px;
-  border: 1px solid var(--sep);
-  background: rgba(255,255,255,0.7);
-  color: var(--text-2);
+  padding: 2px;
+}
+
+.view-tab {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s;
 }
 
-.granularity-btn:hover {
+.view-tab--active {
   background: white;
-  border-color: var(--blue);
-  color: var(--blue);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.granularity-btn--active {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: white;
-  box-shadow: 0 2px 8px rgba(0,122,255,0.3);
-}
-
-.granularity-btn--active:hover {
-  background: #0068d6;
-  color: white;
+.view-tab:hover:not(.view-tab--active) {
+  color: var(--text-2);
 }
 
 /* ====== 页脚 ====== */
@@ -1791,5 +2228,34 @@ export default {
 
 .footer-dot {
   color: var(--sep-opaque);
+}
+
+/* 自定义 Tooltip */
+.custom-tooltip {
+  position: fixed;
+  transform: translateX(-50%) translateY(-100%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: tooltipIn 0.15s ease;
+}
+.custom-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.85);
+}
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-100%) scale(0.95); }
+  to { opacity: 1; transform: translateX(-50%) translateY(-100%) scale(1); }
 }
 </style>

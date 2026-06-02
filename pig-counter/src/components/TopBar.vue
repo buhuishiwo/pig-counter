@@ -18,7 +18,7 @@
       </div>
 
       <div class="topbar-center">
-        <FarmSelector
+        <FarmSelector v-if="routePath === '/'"
           :selectedFarmId="selectedFarmId"
           :farms="farms"
           :showDropdown="showFarmDropdown"
@@ -31,7 +31,7 @@
       </div>
 
       <div class="topbar-actions">
-        <label class="btn-ghost" :class="{ 'btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'top-file-input' : ''"
+        <label v-if="routePath === '/'" class="btn-ghost" :class="{ 'btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'top-file-input' : ''"
           @pointerdown="!selectedFarmId && $emit('need-farm')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
@@ -40,20 +40,20 @@
           </svg>
           单张识别
         </label>
-        <input id="top-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" style="display:none"
+        <input v-if="routePath === '/'" id="top-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" style="display:none"
           multiple @change="onTopFileChange" />
 
-        <label class="btn-ghost" :class="{ 'btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'batch-folder-input' : ''" style="margin-left:4px"
+        <label v-if="routePath === '/'" class="btn-ghost" :class="{ 'btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'batch-folder-input' : ''" style="margin-left:4px"
           @pointerdown="!selectedFarmId && $emit('need-farm')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
           </svg>
           批量识别
         </label>
-        <input id="batch-folder-input" type="file" webkitdirectory directory multiple
+        <input v-if="routePath === '/'" id="batch-folder-input" type="file" webkitdirectory directory multiple
           style="display:none" @change="onBatchFolderChange" />
 
-        <button class="btn-primary"
+        <button v-if="routePath === '/'" class="btn-primary"
           :disabled="(!hasImage && !batchTree) || !selectedFarmId || isAnalyzing || !serviceOnline" @click="$emit('analyze')"
           @pointerdown="(!selectedFarmId || (!hasImage && !batchTree)) && $emit('need-farm')"
           :title="btnTitle">
@@ -75,6 +75,14 @@
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
+        </button>
+
+        <button v-if="routePath === '/stats'" class="btn-ghost" @click="$emit('manage-farm')" title="编辑猪场">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+          编辑猪场
         </button>
 
         <router-link v-if="routePath === '/'" to="/stats" class="btn-ghost" title="查看统计数据">

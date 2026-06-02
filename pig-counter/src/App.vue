@@ -1025,9 +1025,11 @@ export default {
       try {
         const formData = new FormData()
         if (this.selectedFarmId) formData.append('farm_id', this.selectedFarmId)
+        console.log('[BATCH] batchPaths:', this.batchPaths)
+        console.log('[BATCH] file_paths entries:', this.batchPaths?.map((p, i) => `${i}: ${p}`))
         this.batchFiles.forEach((f, i) => {
-          const relPath = this.batchPaths?.[i] || f.webkitRelativePath || f.name
-          formData.append('files', f, relPath)
+          formData.append('files', f)
+          formData.append('file_paths', this.batchPaths?.[i] || f.webkitRelativePath || f.name)
         })
 
         const resp = await new Promise((resolve, reject) => {

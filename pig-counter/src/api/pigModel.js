@@ -90,7 +90,9 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null, signal
   // 处理单张或多张图片
   const files = Array.isArray(imageFiles) ? imageFiles : [imageFiles]
   files.forEach(file => {
-    formData.append('files', file)
+    // 使用 webkitRelativePath 保留文件夹结构
+    const name = file.webkitRelativePath || file.name
+    formData.append('files', file, name)
   })
   
   if (farmId) {

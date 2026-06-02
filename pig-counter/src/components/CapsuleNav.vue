@@ -5,7 +5,7 @@
         <ServiceStatusPill @service-online="$emit('service-online')" />
         <div class="capsule-sep"></div>
 
-        <FarmSelector capsule
+        <FarmSelector v-if="routePath === '/'" capsule
           :selectedFarmId="selectedFarmId"
           :farms="farms"
           :showDropdown="showFarmDropdown"
@@ -15,16 +15,16 @@
           @manage="$emit('manage-farm')"
           @close="$emit('close-dropdown')"
         />
-
-        <button class="capsule-btn-ghost" @click="$emit('manage-farm')" title="管理猪场">
+        <button v-else class="capsule-btn-ghost" @click="$emit('manage-farm')" title="编辑猪场">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 20h9" />
             <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
           </svg>
+          编辑猪场
         </button>
-        <div class="capsule-sep"></div>
+        <div v-if="routePath === '/'" class="capsule-sep"></div>
 
-        <label class="capsule-btn-ghost" :class="{ 'capsule-btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'top-file-input' : ''"
+        <label v-if="routePath === '/'" class="capsule-btn-ghost" :class="{ 'capsule-btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'top-file-input' : ''"
           @pointerdown="!selectedFarmId && $emit('need-farm')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
@@ -34,7 +34,7 @@
           单张识别
         </label>
 
-        <label class="capsule-btn-ghost" :class="{ 'capsule-btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'batch-folder-input' : ''"
+        <label v-if="routePath === '/'" class="capsule-btn-ghost" :class="{ 'capsule-btn-disabled': !selectedFarmId }" :for="selectedFarmId ? 'batch-folder-input' : ''"
           @pointerdown="!selectedFarmId && $emit('need-farm')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
@@ -42,7 +42,7 @@
           批量识别
         </label>
 
-        <button v-if="hasImage || batchTree" class="capsule-btn-ghost capsule-btn-clear" @click="$emit('clear-image')"
+        <button v-if="routePath === '/' && (hasImage || batchTree)" class="capsule-btn-ghost capsule-btn-clear" @click="$emit('clear-image')"
           title="清除图片">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -50,7 +50,7 @@
           </svg>
         </button>
 
-        <button class="capsule-btn-primary"
+        <button v-if="routePath === '/'" class="capsule-btn-primary"
           :disabled="(!hasImage && !batchTree) || !selectedFarmId || isAnalyzing || !serviceOnline" @click="$emit('analyze')"
           @pointerdown="(!selectedFarmId || (!hasImage && !batchTree)) && $emit('need-farm')"
           :title="btnTitle">

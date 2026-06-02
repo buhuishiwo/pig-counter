@@ -1362,7 +1362,7 @@ class BatchUploadResponse(BaseModel):
 
 
 @app.post("/api/batch/upload")
-async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None)) -> dict:
+async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None), file_paths: list[str] = Form(default=[])) -> dict:
     """
     接收带路径的多文件（前端 webkitdirectory 上传）。
     从文件相对路径解析 批次/单元/栏舍 三层结构。
@@ -1380,8 +1380,13 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
     unit_order: list[str] = []
     units: dict[str, list[dict]] = _OrderedDict()  # unit_name → [{name, file}]
 
-    for f in files:
-        path = (f.filename or "").replace("\\", "/")
+    for idx, f in enumerate(files):
+        # 优先使用前端传来的完整路径
+        if idx < len(file_paths) and file_paths[idx]:
+            path = file_paths[idx].replace("\\", "/")
+        else:
+            path = (f.filename or "").replace("\\", "/")
+        print(f"[BATCH] idx={idx}, file_paths_len={len(file_paths)}, path={path}, filename={f.filename}")
         parts = [p for p in path.split("/") if p]
 
         if len(parts) < 2:
@@ -1405,7 +1410,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             units[unit_name] = []
             unit_order.append(unit_name)
 
-        units[unit_name].append({"name": file_name, "file": f})
+        units[unit_name].append({"name": file_name, "file": f, "full_path": path})
 
     if not units:
         raise HTTPException(status_code=400, detail="未找到有效的图片文件（请确认目录结构：批次/单元/栏舍.jpg）")
@@ -1455,9 +1460,10 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                      "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
                     for d in result.detections
                 ] if result.detections else []
+                print(f"[BATCH SAVE] image_name={pen['full_path']}, count={count}")
                 record_id = await save_detection_record(
                     farm_id=farm_id,
-                    image_name=pen["name"],
+                    image_name=pen["full_path"],
                     predicted_count=count,
                     processing_time_ms=result.processing_time_ms,
                     annotated_image=_annotated,

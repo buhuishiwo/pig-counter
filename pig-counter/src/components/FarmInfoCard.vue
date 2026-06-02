@@ -4,7 +4,7 @@
       <Warehouse :size="20" class="farm-info-icon" />
       <div class="farm-info-title">
         <span class="farm-info-label">当前猪场</span>
-        <span class="farm-info-name" :class="{ 'farm-info-name--placeholder': !selectedFarmId }">{{ farmName }}</span>
+        <span class="farm-info-name" :class="{ 'farm-info-name--placeholder': !selectedFarmId }" :title="farmName && farmName.length > 11 ? farmName : ''">{{ farmName && farmName.length > 11 ? farmName.slice(0, 11) + '...' : farmName }}</span>
       </div>
       <span v-if="!selectedFarmId" class="farm-info-hint">未选择</span>
     </div>
