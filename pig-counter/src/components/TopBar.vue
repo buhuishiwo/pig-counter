@@ -13,7 +13,7 @@
           <span class="brand-tag">AI</span>
         </div>
         <div class="brand-sep"></div>
-        <span class="brand-sub">v0.1</span>
+        <span class="brand-sub">v1.0</span>
         <ServiceStatusPill @service-online="$emit('service-online')" />
       </div>
 
