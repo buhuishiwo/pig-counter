@@ -55,7 +55,7 @@
 
         <button class="btn-primary"
           :disabled="(!hasImage && !batchTree) || !selectedFarmId || isAnalyzing || !serviceOnline" @click="$emit('analyze')"
-          @pointerdown="!selectedFarmId && $emit('need-farm')"
+          @pointerdown="(!selectedFarmId || (!hasImage && !batchTree)) && $emit('need-farm')"
           :title="btnTitle">
           <span class="btn-primary-inner">
             <span v-if="isAnalyzing" class="btn-spinner"></span>

@@ -52,7 +52,7 @@
 
         <button class="capsule-btn-primary"
           :disabled="(!hasImage && !batchTree) || !selectedFarmId || isAnalyzing || !serviceOnline" @click="$emit('analyze')"
-          @pointerdown="!selectedFarmId && $emit('need-farm')"
+          @pointerdown="(!selectedFarmId || (!hasImage && !batchTree)) && $emit('need-farm')"
           :title="btnTitle">
           <span v-if="isAnalyzing" class="btn-spinner"></span>
           <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

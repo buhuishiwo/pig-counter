@@ -297,6 +297,7 @@ export default {
       selectedFarmId: null,
       showFarmModal: false,
       warningFlash: false,
+      _latestAnnotatedImage: null,
       // 编辑模式
       showEditModal: false,
       editImageUrl: null,
@@ -349,8 +350,9 @@ export default {
     inferenceTime() { return this.$store.getters.inferenceTime },
     annotatedImage() { return this.$store.state.result?.annotatedImage || null },
     previewAnnotatedImage() {
+      // 批量模式：优先用已更新的 selectedBatchImage.url
       if (this.batchResults && this.selectedBatchImage) return this.selectedBatchImage.url
-      return this._previewComposited || this.annotatedImage
+      return this.annotatedImage
     },
     previewPigCount() {
       if (this.batchResults && this.selectedBatchImage) return this.selectedBatchImage.pig_count
@@ -479,7 +481,8 @@ export default {
       this.scrolled = window.scrollY > 80
     },
     triggerWarningFlash() {
-      if (this.selectedFarmId) return
+      // 已选猪场且已有图片/批量数据时不闪烁
+      if (this.selectedFarmId && (this.hasImage || this.batchTree)) return
       // 如果在胶囊区（已滚动），先滚回顶部再闪烁
       if (this.scrolled) {
         window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -748,6 +751,12 @@ export default {
           }
           // spread 触发 computed 重新计算
           this.batchResults = { ...this.batchResults }
+          // 直接更新当前显示的图片 URL（确保预览/导出用最新图）
+          this.$nextTick(() => {
+            if (this.selectedBatchImage && res.annotated_image) {
+              this.selectedBatchImage.url = res.annotated_image
+            }
+          })
         } else if (this.result) {
           this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
           this.result.count = this.editBoxes.length
@@ -757,6 +766,7 @@ export default {
           }
           if (res.annotated_image) {
             this.$store.commit('SET_RESULT', { ...this.result, annotatedImage: res.annotated_image })
+            this._latestAnnotatedImage = res.annotated_image
           }
         }
         this.$store.commit('ADD_LOG', { msg: `已保存 ${this.editBoxes.length} 个识别框到数据库`, type: 'success' })
@@ -778,8 +788,8 @@ export default {
       }
     },
     exportAnnotatedImage() {
-      if (!this.activeResult) return
-      const src = this.activeResult.imageUrl
+      // 优先用后端返回的标注图（带最新数字），fallback 到批量图片 URL
+      const src = this.annotatedImage || this.activeResult?.imageUrl
       if (!src) return
       const img = new Image()
       img.crossOrigin = 'anonymous'
@@ -790,7 +800,6 @@ export default {
         const ctx = exportCanvas.getContext('2d')
         ctx.drawImage(img, 0, 0)
         const link = document.createElement('a')
-        // 单张模式用 imageMeta.name，批量模式用 unit_name/pen_name
         let baseName = '识别结果'
         if (this.imageMeta?.name) {
           baseName = this.imageMeta.name.replace(/\.[^.]+$/, '')
@@ -830,29 +839,42 @@ export default {
     },
 
     openImagePreview() {
-      if (this.batchResults && this.selectedBatchImage) {
-        this.showImagePreview = true
-        document.body.style.overflow = 'hidden'
-      } else if (this.hasResult && this.annotatedImage) {
-        // 合成图片 + canvas 框到预览
-        this.$nextTick(() => {
-          const canvas = document.querySelector('.box-canvas')
-          const img = document.querySelector('.img-result-base')
-          if (canvas && img && img.naturalWidth > 0) {
-            const c = document.createElement('canvas')
-            c.width = img.naturalWidth
-            c.height = img.naturalHeight
-            const ctx = c.getContext('2d')
-            ctx.drawImage(img, 0, 0)
-            ctx.drawImage(canvas, 0, 0, img.naturalWidth, img.naturalHeight)
+      // 合成图片 + canvas 框到预览（单张和批量通用）
+      const src = this._latestAnnotatedImage || this.annotatedImage || (this.batchResults && this.selectedBatchImage ? this.selectedBatchImage.url : null)
+      if (!src) return
+      this.$nextTick(() => {
+        const canvas = document.querySelector('.box-canvas')
+        const img = document.querySelector('.img-result-base')
+        if (canvas && img && img.naturalWidth > 0) {
+          const c = document.createElement('canvas')
+          c.width = img.naturalWidth
+          c.height = img.naturalHeight
+          const ctx = c.getContext('2d')
+          // 先画标注图（带数字）
+          const previewImg = new Image()
+          previewImg.crossOrigin = 'anonymous'
+          previewImg.onload = () => {
+            ctx.drawImage(previewImg, 0, 0, c.width, c.height)
+            // 再叠加 canvas 框
+            ctx.drawImage(canvas, 0, 0, c.width, c.height)
             this._previewComposited = c.toDataURL('image/png')
-          } else {
-            this._previewComposited = null
+            this.showImagePreview = true
+            document.body.style.overflow = 'hidden'
           }
+          previewImg.onerror = () => {
+            // fallback: 直接用当前显示的图
+            ctx.drawImage(img, 0, 0)
+            this._previewComposited = c.toDataURL('image/png')
+            this.showImagePreview = true
+            document.body.style.overflow = 'hidden'
+          }
+          previewImg.src = src
+        } else {
+          this._previewComposited = null
           this.showImagePreview = true
           document.body.style.overflow = 'hidden'
-        })
-      }
+        }
+      })
     },
     closeImagePreview() {
       this.showImagePreview = false
@@ -936,6 +958,7 @@ export default {
     },
     clearImage() {
       if (this._abortCtrl) { this._abortCtrl.abort(); this._abortCtrl = null }
+      this._latestAnnotatedImage = null
       window.__modelOriginalCount = null
       if (this.batchTree) {
         this.clearBatch()
