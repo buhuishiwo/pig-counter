@@ -733,7 +733,8 @@ export default {
         }
         const res = await updateDetectionRecord(this.editRecordId, {
           boxes: this.editBoxes,
-          original_image: this.previewUrl || imageForApi
+          original_image: this.previewUrl || imageForApi,
+          predicted_count: this.editBoxes.length
         })
         // 更新对应模式的数据源
         if (this.batchResults && this.selectedBatchImage) {
