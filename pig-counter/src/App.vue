@@ -1129,6 +1129,7 @@ export default {
       this.batchResults = null
       this.batchImageIndex = 0
       this.showFolderTree = false
+      this.$store.commit('CLEAR_IMAGE')
     },
     triggerBatchReUpload(files) {
       this.onBatchFolderChange(files)
