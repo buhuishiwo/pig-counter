@@ -133,8 +133,10 @@ export default {
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  height: 100%
+  height: 100%;
+  animation: sectionIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
 }
+@keyframes sectionIn { from { opacity: 0 } to { opacity: 1 } }
 
 .img-card-header {
   display: flex;

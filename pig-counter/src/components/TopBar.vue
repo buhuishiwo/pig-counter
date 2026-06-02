@@ -70,7 +70,7 @@
         </button>
         <span v-if="!serviceOnline" class="btn-hint btn-hint--error">服务离线，无法识别</span>
 
-        <button v-if="hasImage || batchTree" class="btn-ghost btn-clear" @click="$emit('clear-image')">
+        <button v-if="routePath === '/' && (hasImage || batchTree)" class="btn-ghost btn-clear" @click="$emit('clear-image')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
