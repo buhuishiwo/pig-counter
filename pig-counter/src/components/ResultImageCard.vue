@@ -5,20 +5,6 @@
       <div class="img-card-header-left">
         <span class="traffic-dot" :class="batchMode ? (batchProcessing ? 'dot-yellow' : 'dot-green') : (hasResult ? 'dot-green' : 'dot-gray')"></span>
         <span class="img-card-title">{{ batchMode ? (batchProcessing ? '批量扫描中…' : '批量结果') : '标注结果' }}</span>
-      </div>
-      <div class="img-card-header-right">
-        <button v-if="hasResult" class="btn-header" @click="$emit('edit')" title="编辑标注">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-          </svg>
-          编辑标注
-        </button>
-        <button v-if="hasResult" class="btn-header" @click="$emit('export')" title="导出图片">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          导出图片
-        </button>
         <template v-if="batchMode && selectedBatchImage">
           <span class="img-card-chip">{{ selectedBatchImage.unit_name }}</span>
           <span class="img-card-chip">{{ selectedBatchImage.pen_name }}</span>
@@ -41,6 +27,20 @@
             </span>
           </transition>
         </template>
+      </div>
+      <div class="img-card-header-right">
+        <button v-if="hasResult" class="btn-header" @click="$emit('edit')" title="编辑标注">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+          </svg>
+          编辑标注
+        </button>
+        <button v-if="hasResult" class="btn-header btn-header--primary" @click="$emit('export')" title="导出图片">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          导出图片
+        </button>
       </div>
     </div>
     <div class="img-card-body">
@@ -270,7 +270,10 @@ export default {
 .img-card-header-left {
   display: flex;
   align-items: center;
-  gap: 8px
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap
 }
 
 .img-card-header-right {
@@ -297,6 +300,16 @@ export default {
 .btn-header:hover {
   background: rgba(0, 0, 0, 0.08);
   color: var(--text-2)
+}
+
+.btn-header--primary {
+  background: var(--blue);
+  color: white;
+  border: none;
+}
+.btn-header--primary:hover {
+  background: #0068d6;
+  color: white;
 }
 
 .traffic-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0 }

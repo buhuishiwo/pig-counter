@@ -748,7 +748,10 @@ export default {
           // 修改 batchResults 源数据（非 computed 临时对象）
           for (const unit of this.batchResults.units) {
             for (const pen of unit.pens) {
-              if (pen.pen_name === this.selectedBatchImage.pen_name) {
+              const match = this.selectedBatchImage.record_id
+                ? pen.record_id === this.selectedBatchImage.record_id
+                : (pen.pen_name === this.selectedBatchImage.pen_name && unit.unit_name === this.selectedBatchImage.unit_name)
+              if (match) {
                 pen.boxes = JSON.parse(JSON.stringify(this.editBoxes))
                 pen.pig_count = this.editBoxes.length
                 if (res.annotated_image) pen.annotated_image = res.annotated_image
@@ -757,6 +760,17 @@ export default {
             }
           }
           // spread 触发 computed 重新计算
+          // 重新计算 unit.subtotal 和 total_pigs
+          let totalPigs = 0
+          for (const unit of this.batchResults.units) {
+            let unitTotal = 0
+            for (const pen of unit.pens) {
+              unitTotal += pen.pig_count || 0
+            }
+            unit.subtotal = unitTotal
+            totalPigs += unitTotal
+          }
+          this.batchResults.total_pigs = totalPigs
           this.batchResults = { ...this.batchResults }
           // 与单张模式一致：更新 store + _latestAnnotatedImage，确保预览/导出用最新图
           if (res.annotated_image) {
