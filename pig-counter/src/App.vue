@@ -137,7 +137,7 @@
       </div>
 
       <transition name="section-rise">
-        <DetectionDetailTable v-if="hasResult"
+        <DetectionDetailTable v-if="hasResult && !batchResults"
           :boxes="result.boxes"
           :pigCount="pigCount"
           :confidencePct="confidencePct"
@@ -733,8 +733,7 @@ export default {
         }
         const res = await updateDetectionRecord(this.editRecordId, {
           boxes: this.editBoxes,
-          annotated_image: imageForApi,
-          original_image: this.previewUrl
+          original_image: this.previewUrl || imageForApi
         })
         // 更新对应模式的数据源
         if (this.batchResults && this.selectedBatchImage) {
@@ -751,12 +750,11 @@ export default {
           }
           // spread 触发 computed 重新计算
           this.batchResults = { ...this.batchResults }
-          // 直接更新当前显示的图片 URL（确保预览/导出用最新图）
-          this.$nextTick(() => {
-            if (this.selectedBatchImage && res.annotated_image) {
-              this.selectedBatchImage.url = res.annotated_image
-            }
-          })
+          // 与单张模式一致：更新 store + _latestAnnotatedImage，确保预览/导出用最新图
+          if (res.annotated_image) {
+            this._latestAnnotatedImage = res.annotated_image
+            this.$store.commit('SET_RESULT', { ...(this.result || {}), annotatedImage: res.annotated_image })
+          }
         } else if (this.result) {
           this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
           this.result.count = this.editBoxes.length
@@ -788,8 +786,8 @@ export default {
       }
     },
     exportAnnotatedImage() {
-      // 优先用后端返回的标注图（带最新数字），fallback 到批量图片 URL
-      const src = this.annotatedImage || this.activeResult?.imageUrl
+      // 批量模式优先用 selectedBatchImage.url（已更新），单张模式用 store 的 annotatedImage
+      const src = (this.batchResults && this.selectedBatchImage ? this.selectedBatchImage.url : null) || this.annotatedImage || this.activeResult?.imageUrl
       if (!src) return
       const img = new Image()
       img.crossOrigin = 'anonymous'

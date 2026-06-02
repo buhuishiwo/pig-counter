@@ -58,7 +58,13 @@ export async function updateDetectionRecord(recordId, updateData) {
   
   try {
     const response = await axios.put(`${BASE_URL}/detection-records/${recordId}`, updateData)
-    console.log('[DEBUG] updateDetectionRecord response:', response.data)
+    console.log('[DEBUG] updateDetectionRecord response:', {
+      id: response.data.id,
+      predicted_count: response.data.predicted_count,
+      boxes_count: response.data.boxes ? response.data.boxes.length : 0,
+      annotated_image_len: response.data.annotated_image ? response.data.annotated_image.length : 0,
+      annotated_image_prefix: response.data.annotated_image ? response.data.annotated_image.substring(0, 60) : null
+    })
     return response.data
   } catch (error) {
     console.error('[DEBUG] updateDetectionRecord error:', error.response?.data || error.message)
