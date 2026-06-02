@@ -152,19 +152,19 @@ export default {
 /* Ant Design 风格 Select（标准模式）*/
 .antd-select {
   position: relative;
-  width: 180px;
-  font-size: 13px;
+  width: 200px;
+  font-size: 14px;
   cursor: pointer;
 }
 .antd-select-selector {
   display: flex;
   align-items: center;
-  padding: 5px 11px;
-  border-radius: 6px;
+  padding: 7px 13px;
+  border-radius: 20px;
   border: 1px solid #d9d9d9;
   background: #fff;
   transition: all 0.2s;
-  min-height: 32px;
+  min-height: 36px;
 }
 .antd-select:hover .antd-select-selector { border-color: var(--blue); }
 .antd-select--open .antd-select-selector { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
@@ -206,7 +206,8 @@ export default {
   overflow-y: auto;
 }
 .antd-select-item {
-  padding: 5px 12px;
+  padding: 6px 12px;
+  font-size: 14px;
   color: var(--text);
   transition: background 0.1s;
   white-space: nowrap;

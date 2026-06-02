@@ -1274,14 +1274,14 @@ class TimeSeriesResponse(BaseModel):
 
 @app.get("/api/detection-stats/time-series", response_model=TimeSeriesResponse)
 async def get_time_series_stats(
-    granularity: str = "day",  # day 或 month
+    granularity: str = "day",  # day, month 或 year
     farm_id: int | None = None,
     days: int = 30
 ) -> TimeSeriesResponse:
     """获取按时间粒度统计的数据"""
     try:
-        if granularity not in ["day", "month"]:
-            raise HTTPException(status_code=422, detail="granularity must be 'day' or 'month'")
+        if granularity not in ["day", "month", "year"]:
+            raise HTTPException(status_code=422, detail="granularity must be 'day', 'month' or 'year'")
         
         with get_db() as conn:
             with conn.cursor() as cursor:
@@ -1296,9 +1296,12 @@ async def get_time_series_stats(
                 if granularity == "day":
                     date_format = "DATE(created_at)"
                     time_condition = f"created_at >= DATE_SUB(NOW(), INTERVAL {days} DAY)"
-                else:  # month
+                elif granularity == "month":
                     date_format = "DATE_FORMAT(created_at, '%%Y-%%m')"
                     time_condition = f"created_at >= DATE_SUB(NOW(), INTERVAL {days} DAY)"
+                else:  # year
+                    date_format = "DATE_FORMAT(created_at, '%%Y')"
+                    time_condition = "1=1"
                 
                 # 构建完整的WHERE子句
                 if where_clause:

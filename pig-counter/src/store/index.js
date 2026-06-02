@@ -40,7 +40,7 @@ export default createStore({
     originalCount:  state => state.originalCount ?? state.result?.count ?? null,
     confidence:     state => state.result?.confidence ?? null,
     confidencePct:  state => state.result
-      ? Math.round(state.result.confidence * 100)
+      ? Math.round((state.result.confidence || 0) * 100)
       : null,
     inferenceTime:  state => state.result?.inferenceTime ?? null,
     recentLogs:     state => state.logs.slice(0, 30),

@@ -1,9 +1,6 @@
 <template>
   <div id="app" :class="{ 'has-result': hasResult }">
     <div class="ambient-wrap" aria-hidden="true">
-      <div class="ambient-orb orb-1"></div>
-      <div class="ambient-orb orb-2"></div>
-      <div class="ambient-orb orb-3" :class="{ pulse: hasResult }"></div>
       <div class="ambient-grid"></div>
     </div>
 
@@ -470,7 +467,6 @@ export default {
   },
   created() {},
   mounted() {
-    window.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('keydown', this.onKeyDown)
 
     const scroller = document.querySelector('.page-wrap') // 或其他容器
@@ -479,7 +475,6 @@ export default {
     window.addEventListener('scroll', this.onScroll)
   },
   beforeUnmount() {
-    window.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('keydown', this.onKeyDown)
     this._scroller.removeEventListener('scroll', this.onScroll)
   },
@@ -849,15 +844,6 @@ export default {
         this.closeImagePreview()
       }
     },
-    onMouseMove(e) {
-      const mx = e.clientX / window.innerWidth - 0.5
-      const my = e.clientY / window.innerHeight - 0.5
-      const o1 = document.querySelector('.orb-1')
-      const o2 = document.querySelector('.orb-2')
-      if (o1) o1.style.transform = 'translate(' + (mx * 30) + 'px,' + (my * 30) + 'px)'
-      if (o2) o2.style.transform = 'translate(' + (-mx * 20) + 'px,' + (-my * 20) + 'px)'
-    },
-
     openImagePreview() {
       // 合成图片 + canvas 框到预览（单张和批量通用）
       const src = this._latestAnnotatedImage || this.annotatedImage || (this.batchResults && this.selectedBatchImage ? this.selectedBatchImage.url : null)
@@ -1631,7 +1617,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  background: var(--bg)
+  background: transparent
 }
 
 

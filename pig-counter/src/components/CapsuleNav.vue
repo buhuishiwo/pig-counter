@@ -15,12 +15,11 @@
           @manage="$emit('manage-farm')"
           @close="$emit('close-dropdown')"
         />
-        <button v-else class="capsule-btn-ghost" @click="$emit('manage-farm')" title="编辑猪场">
+        <button class="capsule-btn-ghost" @click="$emit('manage-farm')" title="编辑猪场">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 20h9" />
             <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
           </svg>
-          编辑猪场
         </button>
         <div v-if="routePath === '/'" class="capsule-sep"></div>
 
@@ -68,14 +67,14 @@
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />
           </svg>
-          统计
+          统计页面
         </router-link>
         <router-link v-else-if="routePath === '/stats'" to="/" class="capsule-btn-ghost">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          识别
+          识别页面
         </router-link>
       </div>
     </div>

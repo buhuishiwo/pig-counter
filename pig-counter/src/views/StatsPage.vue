@@ -51,8 +51,9 @@
         </div>
         <div class="section-header-right">
           <div class="view-tabs">
-            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'day' }" @click="changeTimeSeriesGranularity('day')">按日</button>
-            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'month' }" @click="changeTimeSeriesGranularity('month')">按月</button>
+            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'day' }" @click="changeTimeSeriesGranularity('day')">日</button>
+            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'month' }" @click="changeTimeSeriesGranularity('month')">月</button>
+            <button class="view-tab" :class="{ 'view-tab--active': timeSeriesGranularity === 'year' }" @click="changeTimeSeriesGranularity('year')">年</button>
           </div>
         </div>
       </div>
@@ -122,13 +123,13 @@
               </td>
               <td>
                 <div class="num-cell">
-                  <span class="num-val">{{ farm.total_images }}</span>
+                  <span class="num-val num-val--blue">{{ farm.total_images }}</span>
                   <span class="num-unit">张</span>
                 </div>
               </td>
               <td>
                 <div class="num-cell">
-                  <span class="num-val">{{ farm.total_pigs }}</span>
+                  <span class="num-val num-val--blue">{{ farm.total_pigs }}</span>
                   <span class="num-unit">头</span>
                 </div>
               </td>
@@ -509,7 +510,7 @@ export default {
       // 时间序列数据
       timeSeriesData: [],
       timeSeriesLoading: false,
-      timeSeriesGranularity: 'day', // day 或 month
+      timeSeriesGranularity: 'day', // day, month 或 year
       timeSeriesChart: null,
 
       // 图片回看
@@ -798,7 +799,7 @@ export default {
             plugins: {
               title: {
                 display: true,
-                text: this.timeSeriesGranularity === 'day' ? '每日数据统计' : '每月数据统计',
+                text: this.timeSeriesGranularity === 'day' ? '每日数据统计' : this.timeSeriesGranularity === 'month' ? '每月数据统计' : '每年数据统计',
                 font: { size: 16, weight: '600' },
                 color: '#1e293b',
                 padding: { bottom: 16 }
@@ -1383,6 +1384,7 @@ export default {
 
 .num-cell { display: flex; align-items: baseline; gap: 3px; }
 .num-val { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.num-val--blue { color: var(--blue) }
 .num-cell--highlight .num-val { color: var(--green); }
 .today-val { color: var(--blue); font-size: 18px; }
 .num-unit { font-size: 12px; color: var(--text-3); }
