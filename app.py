@@ -14,10 +14,6 @@ import numpy as np
 import pymysql
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
-try:
-    from ocr import recognize_farm_mark
-except ImportError:
-    recognize_farm_mark = None
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,9 +38,6 @@ DB_CONFIG = {
     "cursorclass": pymysql.cursors.DictCursor,
 }
 
-_OCR_API_KEY = os.getenv("OCR_API_KEY", "").strip()
-_OCR_BASE_URL = os.getenv("OCR_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-_OCR_MODEL = os.getenv("OCR_MODEL", "qwen-vl-ocr")
 
 _MODEL_LOCK = threading.Lock()
 _MODEL_CACHE: dict[str, cv2.dnn.Net] = {}
@@ -487,74 +480,6 @@ async def save_detection_record(
 # ============================================================
 # OCR 标记识别 API
 # ============================================================
-
-class OCRMarkResponse(BaseModel):
-    success: bool
-    text: str | None = None
-    source: str | None = None
-    confidence: float | None = None
-    source_quality: str | None = None
-    suggestions: list[dict[str, Any]] = []
-
-
-@app.post("/api/ocr/farm-mark", response_model=OCRMarkResponse)
-async def ocr_farm_mark(file: UploadFile = File(...)) -> OCRMarkResponse:
-    if recognize_farm_mark is None:
-        raise HTTPException(status_code=501, detail="OCR 模块未安装")
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="只支持图片文件")
-
-    image_bytes = await file.read()
-    if len(image_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="图片大小超过 10MB 限制")
-
-    try:
-        image = decode_image(image_bytes)
-        result = recognize_farm_mark(image)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="无法解析图片，请确认文件格式正确")
-    except Exception:
-        return OCRMarkResponse(success=False, text=None, source=None, suggestions=[])
-
-    text = result.get("text")
-    source = result.get("source")
-    confidence = result.get("confidence")
-    source_quality = result.get("source_quality")
-
-    suggestions: list[dict[str, Any]] = []
-    if text:
-        try:
-            with get_db() as conn:
-                with conn.cursor() as cursor:
-                    parts = [p for p in text.replace("-", " ").replace("/", " ").split() if len(p) >= 2]
-                    if parts:
-                        conditions = []
-                        params = []
-                        for part in parts:
-                            conditions.append("name LIKE %s")
-                            params.append(f"%{part}%")
-                        conditions.append("%s LIKE CONCAT('%%', name, '%%')")
-                        params.append(text)
-
-                        sql = (
-                            "SELECT DISTINCT id, name FROM pig_farms"
-                            f" WHERE {' OR '.join(conditions)} LIMIT 5"
-                        )
-                        cursor.execute(sql, params)
-                        for row in cursor.fetchall():
-                            suggestions.append({"farm_id": row["id"], "name": row["name"]})
-        except Exception:
-            pass
-
-    return OCRMarkResponse(
-        success=text is not None,
-        text=text,
-        source=source,
-        confidence=confidence,
-        source_quality=source_quality,
-        suggestions=suggestions,
-    )
-
 
 # ============================================================
 # 猪场管理API
