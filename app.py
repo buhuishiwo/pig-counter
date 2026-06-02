@@ -14,7 +14,10 @@ import numpy as np
 import pymysql
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
-from ocr import recognize_farm_mark
+try:
+    from ocr import recognize_farm_mark
+except ImportError:
+    recognize_farm_mark = None
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -496,6 +499,8 @@ class OCRMarkResponse(BaseModel):
 
 @app.post("/api/ocr/farm-mark", response_model=OCRMarkResponse)
 async def ocr_farm_mark(file: UploadFile = File(...)) -> OCRMarkResponse:
+    if recognize_farm_mark is None:
+        raise HTTPException(status_code=501, detail="OCR 模块未安装")
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="只支持图片文件")
 
