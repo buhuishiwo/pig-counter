@@ -161,12 +161,19 @@ export default {
   watch: {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
     hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) this.drawBoxesAnimated() },
-    selectedBatchImage(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
-    batchImageIndex() { if (this.selectedBatchImage) this.$nextTick(() => this.drawBoxesAnimated()) }
+    selectedBatchImage(val, oldVal) {
+      // 只在真正切换图片时清空 override
+      if (!val || !oldVal || val.record_id !== oldVal.record_id || val.pen_name !== oldVal.pen_name) {
+        this._overrideBoxes = null
+      }
+      if (val) this.$nextTick(() => this.drawBoxesAnimated())
+    },
+    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage) this.$nextTick(() => this.drawBoxesAnimated()) }
   },
   methods: {
     onResultImgLoad() { this.drawBoxesAnimated() },
-    drawBoxesAnimated() {
+    drawBoxesAnimated(overrideBoxes) {
+      if (overrideBoxes) this._overrideBoxes = overrideBoxes
       const canvas = this.$refs.boxCanvas
       const img = this.$refs.baseImg
       if (!canvas || !img) return
@@ -176,7 +183,11 @@ export default {
       if (!containerW || !containerH) return
 
       let boxes, imgW, imgH
-      if (this.batchMode && this.selectedBatchResult) {
+      if (overrideBoxes || this._overrideBoxes) {
+        boxes = overrideBoxes || this._overrideBoxes
+        imgW = this.selectedBatchImage ? this.selectedBatchImage.image_width : (this.imageMeta?.width || 0)
+        imgH = this.selectedBatchImage ? this.selectedBatchImage.image_height : (this.imageMeta?.height || 0)
+      } else if (this.batchMode && this.selectedBatchResult) {
         boxes = this.selectedBatchResult.boxes || []
         imgW = this.selectedBatchImage ? this.selectedBatchImage.image_width : 0
         imgH = this.selectedBatchImage ? this.selectedBatchImage.image_height : 0

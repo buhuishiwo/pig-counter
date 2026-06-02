@@ -386,6 +386,7 @@ export default {
               pig_count: pen.pig_count,
               confidence: pen.confidence || 0,
               boxes: pen.boxes || [],
+              record_id: pen.record_id || null,
               image_width: pen.image_width || 0,
               image_height: pen.image_height || 0,
               processing_time_ms: pen.processing_time_ms || 0
@@ -496,7 +497,9 @@ export default {
       if (this.batchResults && this.selectedBatchImage) {
         boxes = this.selectedBatchImage.boxes || []
         recordId = this.selectedBatchImage.record_id || null
-        imageUrl = this.selectedBatchImage.url
+        // 批量模式：从 batchFiles 找原图创建 URL（避免用缩略图）
+        const matchFile = this.batchFiles?.find(f => f.name === this.selectedBatchImage.pen_name)
+        imageUrl = matchFile ? URL.createObjectURL(matchFile) : this.selectedBatchImage.url
       } else if (this.result) {
         boxes = this.result.boxes || []
         recordId = this.result.recordId || null
@@ -518,6 +521,8 @@ export default {
       this.$store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
     },
     closeEditModal() {
+      // 释放批量模式创建的临时 URL
+      if (this.editImageUrl?.startsWith('blob:')) URL.revokeObjectURL(this.editImageUrl)
       this.showEditModal = false
       this.editBoxes = []
       this.editSelectedIndex = null
@@ -558,8 +563,15 @@ export default {
       const canvas = this.$refs.editCanvas
       const img = this.$refs.editImg
       if (!canvas || !img || !img.naturalWidth) return
+      // 同步 canvas 像素缓冲与 CSS 渲染尺寸
+      const rect = canvas.getBoundingClientRect()
+      if (Math.abs(rect.width - canvas.width) > 1 || Math.abs(rect.height - canvas.height) > 1) {
+        canvas.width = Math.round(rect.width)
+        canvas.height = Math.round(rect.height)
+      }
       const imgW = this.imageMeta?.width || this.selectedBatchImage?.image_width || img.naturalWidth
       const imgH = this.imageMeta?.height || this.selectedBatchImage?.image_height || img.naturalHeight
+      if (!imgW || !imgH) return
       const scaleX = canvas.width / imgW
       const scaleY = canvas.height / imgH
       const ctx = canvas.getContext('2d')
@@ -589,18 +601,20 @@ export default {
     getEditCanvasCoords(e) {
       const canvas = this.$refs.editCanvas
       const img = this.$refs.editImg
-      if (!canvas || !img) return null
+      if (!canvas || !img || !canvas.width) return null
       const rect = canvas.getBoundingClientRect()
-      const cx = e.clientX - rect.left
-      const cy = e.clientY - rect.top
+      // CSS 坐标 → canvas 像素坐标（处理 rect.width ≠ canvas.width 的亚像素偏差）
+      const canvasX = (e.clientX - rect.left) / rect.width * canvas.width
+      const canvasY = (e.clientY - rect.top) / rect.height * canvas.height
       const imgW = this.imageMeta?.width || this.selectedBatchImage?.image_width || img.naturalWidth
       const imgH = this.imageMeta?.height || this.selectedBatchImage?.image_height || img.naturalHeight
       return {
-        cx, cy,
-        imgX: cx / rect.width * imgW,
-        imgY: cy / rect.height * imgH,
-        scaleX: rect.width / imgW,
-        scaleY: rect.height / imgH
+        cx: canvasX,
+        cy: canvasY,
+        imgX: canvasX / canvas.width * imgW,
+        imgY: canvasY / canvas.height * imgH,
+        scaleX: canvas.width / imgW,
+        scaleY: canvas.height / imgH
       }
     },
     onEditCanvasMouseDown(e) {
@@ -703,16 +717,37 @@ export default {
       }
       try {
         const { updateDetectionRecord } = await import('@/api/detectionApi')
+        // blob URL 需要转成 base64 再发给后端
+        let imageForApi = this.editImageUrl
+        if (imageForApi && imageForApi.startsWith('blob:')) {
+          const resp = await fetch(imageForApi)
+          const blob = await resp.blob()
+          imageForApi = await new Promise(resolve => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result)
+            reader.readAsDataURL(blob)
+          })
+        }
         const res = await updateDetectionRecord(this.editRecordId, {
           boxes: this.editBoxes,
-          annotated_image: this.editImageUrl,
+          annotated_image: imageForApi,
           original_image: this.previewUrl
         })
         // 更新对应模式的数据源
         if (this.batchResults && this.selectedBatchImage) {
-          this.selectedBatchImage.boxes = JSON.parse(JSON.stringify(this.editBoxes))
-          this.selectedBatchImage.pig_count = this.editBoxes.length
-          if (res.annotated_image) this.selectedBatchImage.url = res.annotated_image
+          // 修改 batchResults 源数据（非 computed 临时对象）
+          for (const unit of this.batchResults.units) {
+            for (const pen of unit.pens) {
+              if (pen.pen_name === this.selectedBatchImage.pen_name) {
+                pen.boxes = JSON.parse(JSON.stringify(this.editBoxes))
+                pen.pig_count = this.editBoxes.length
+                if (res.annotated_image) pen.annotated_image = res.annotated_image
+                break
+              }
+            }
+          }
+          // spread 触发 computed 重新计算
+          this.batchResults = { ...this.batchResults }
         } else if (this.result) {
           this.result.boxes = JSON.parse(JSON.stringify(this.editBoxes))
           this.result.count = this.editBoxes.length
@@ -724,13 +759,19 @@ export default {
             this.$store.commit('SET_RESULT', { ...this.result, annotatedImage: res.annotated_image })
           }
         }
-        // 立即刷新主视图标注
-        this.$nextTick(() => {
-          if (this.$refs.resultCard) this.$refs.resultCard.drawBoxesAnimated()
-        })
         this.$store.commit('ADD_LOG', { msg: `已保存 ${this.editBoxes.length} 个识别框到数据库`, type: 'success' })
         this.showNotify('success', '保存成功', `已更新 ${this.editBoxes.length} 个识别框`)
+        // 保存 boxes 快照（closeEditModal 会清空 editBoxes）
+        const boxesSnapshot = JSON.parse(JSON.stringify(this.editBoxes))
         this.closeEditModal()
+        // 双层 $nextTick 等待 DOM 更新 + 图片 @load 完成后再画框
+        this.$nextTick(() => {
+          this.$nextTick(() => {
+            if (this.$refs.resultCard) {
+              this.$refs.resultCard.drawBoxesAnimated(boxesSnapshot)
+            }
+          })
+        })
       } catch (e) {
         this.$store.commit('ADD_LOG', { msg: '保存失败：' + e.message, type: 'error' })
         this.showNotify('error', '保存失败', e.message)
