@@ -1,0 +1,36 @@
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; border-radius: 10px;
+  background: transparent; color: var(--text-2);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.btn-ghost:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; border-radius: 10px;
+  background: var(--accent); color: white;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-clear {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: 1px solid var(--sep-opaque); border-radius: 10px;
+  background: var(--bg-2); color: var(--text-3);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.btn-clear:hover { border-color: var(--text-3); color: var(--text); }
+
+.btn-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; border-radius: 10px;
+  background: rgba(0,122,255,0.08); color: var(--accent);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-hint:hover { background: rgba(0,122,255,0.15); }

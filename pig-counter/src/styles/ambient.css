@@ -1,0 +1,16 @@
+.ambient-wrap {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  overflow: hidden; background: var(--bg);
+}
+.ambient-grid {
+  position: absolute; inset: -50%;
+  background-image:
+    linear-gradient(var(--sep) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sep) 1px, transparent 1px);
+  background-size: 80px 80px;
+  animation: gridFloat 60s linear infinite;
+}
+@keyframes gridFloat {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(80px, 80px); }
+}

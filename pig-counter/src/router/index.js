@@ -6,7 +6,7 @@ export default createRouter({
     {
       path: '/',
       name: 'Home',
-      component: { render: () => null }
+      component: () => import('@/views/HomePage.vue')
     },
     {
       path: '/stats',

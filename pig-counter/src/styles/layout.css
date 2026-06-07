@@ -1,0 +1,21 @@
+.page-wrap {
+  position: relative; z-index: 1;
+  max-width: 1440px; margin: 0 auto;
+  padding: 80px 24px 24px;
+}
+
+.top-info-row {
+  display: flex; gap: 16px; margin-bottom: 16px;
+}
+.current-farm-section { flex: 1; }
+.system-stats-section { flex: 1; }
+
+.image-row {
+  display: flex; gap: 16px; margin-bottom: 16px;
+}
+.image-row > * { flex: 1; min-width: 0; }
+
+@media (max-width: 768px) {
+  .image-row { flex-direction: column; }
+  .top-info-row { flex-direction: column; }
+}

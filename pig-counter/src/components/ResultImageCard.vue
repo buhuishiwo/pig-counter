@@ -63,7 +63,7 @@
         <!-- 批量模式：检测完成后显示标注图 -->
         <div v-else-if="batchMode && selectedBatchImage"
           class="canvas-wrap" @click="$emit('open-preview')">
-          <img :src="selectedBatchImage.url" class="img-preview img-result-base" alt="batch result" ref="baseImg"
+          <img :src="selectedBatchImage.url" :key="'batch-' + batchImageIndex + '-' + selectedBatchImage.pig_count" class="img-preview img-result-base" alt="batch result" ref="baseImg"
             @load="onResultImgLoad" />
           <canvas ref="boxCanvas" class="box-canvas"></canvas>
         </div>
@@ -167,7 +167,13 @@ export default {
       }
       if (val) this.$nextTick(() => this.drawBoxesAnimated())
     },
-    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage) this.$nextTick(() => this.drawBoxesAnimated()) }
+    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage) this.$nextTick(() => this.drawBoxesAnimated()) },
+    selectedBatchResult(val) {
+      if (val && this.batchMode) {
+        this._overrideBoxes = null
+        this.$nextTick(() => this.drawBoxesAnimated())
+      }
+    }
   },
   methods: {
     onResultImgLoad() { this.drawBoxesAnimated() },
@@ -218,13 +224,22 @@ export default {
           ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
           if (lt > 0.6) {
             const la = (lt - 0.6) / 0.4
+            // 置信度标签（框上方，带边界检查）
             ctx.save(); ctx.globalAlpha = la
             const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
             ctx.font = 'bold 11px -apple-system,monospace'
             const tw = ctx.measureText(label).width
+            const labelY = Math.max(2, c.y1 - 22)
             ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
-            ctx.beginPath(); ctx.roundRect(c.x1, c.y1 - 22, tw + 12, 20, 4); ctx.fill()
-            ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, c.y1 - 7); ctx.restore()
+            ctx.beginPath(); ctx.roundRect(c.x1, labelY, tw + 12, 20, 4); ctx.fill()
+            ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, labelY + 14); ctx.restore()
+            // 数字标注（框中心）
+            ctx.save(); ctx.globalAlpha = la
+            ctx.font = 'bold 14px -apple-system,sans-serif'
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillStyle = 'rgba(0,0,0,0.85)'
+            ctx.fillText(String(i + 1), (c.x1 + c.x2) / 2, (c.y1 + c.y2) / 2)
+            ctx.restore()
           }
         })
         if (prog < total) requestAnimationFrame(draw)

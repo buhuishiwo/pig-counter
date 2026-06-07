@@ -1,0 +1,72 @@
+/* Edit modal */
+.edit-modal {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.edit-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+}
+.edit-container {
+  position: relative; z-index: 1;
+  background: var(--bg-2);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  width: 90vw; max-width: 900px; max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.edit-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--sep);
+}
+.edit-header h3 { font-size: 16px; font-weight: 600; }
+.edit-close {
+  width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: transparent; font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); transition: background 0.2s;
+}
+.edit-close:hover { background: rgba(0,0,0,0.05); }
+
+.edit-tabs {
+  display: flex; gap: 4px; padding: 12px 20px; border-bottom: 1px solid var(--sep);
+}
+.edit-tab {
+  padding: 6px 16px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-3);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.edit-tab.active { background: var(--accent); color: white; }
+.edit-tab:hover:not(.active) { background: rgba(0,0,0,0.05); }
+
+.edit-canvas-area {
+  position: relative; flex: 1; min-height: 300px;
+  display: flex; align-items: center; justify-content: center;
+  background: #f8f8f8; overflow: hidden;
+}
+.edit-img {
+  max-width: 100%; max-height: 60vh;
+  object-fit: contain; position: relative;
+}
+.edit-canvas {
+  position: absolute; cursor: crosshair;
+}
+
+.edit-footer {
+  display: flex; gap: 8px; padding: 16px 20px;
+  border-top: 1px solid var(--sep); justify-content: flex-end;
+}
+.edit-btn {
+  padding: 8px 16px; border: 1px solid var(--sep-opaque); border-radius: 10px;
+  background: var(--bg-2); color: var(--text);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.edit-btn:hover { border-color: var(--text-3); }
+.edit-btn--primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.edit-btn--primary:hover { background: var(--accent-hover); }
+.edit-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }

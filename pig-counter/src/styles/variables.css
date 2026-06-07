@@ -1,0 +1,19 @@
+:root {
+  --bg: #f2f2f7;
+  --bg-2: #ffffff;
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.88);
+  --glass-shadow: 0 2px 20px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --glass-hover: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.05);
+  --text: #1c1c1e;
+  --text-2: #3a3a3c;
+  --text-3: #6e6e73;
+  --text-4: #aeaeb2;
+  --sep: rgba(60, 60, 67, 0.12);
+  --sep-opaque: #d1d1d6;
+  --accent: #007AFF;
+  --accent-hover: #0066D6;
+  --success: #34C759;
+  --error: #FF3B30;
+  --warning: #FF9500;
+}

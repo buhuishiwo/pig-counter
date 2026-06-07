@@ -1,0 +1,38 @@
+/* Section rise */
+.section-rise-enter-active, .section-rise-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.section-rise-enter-from, .section-rise-leave-to {
+  opacity: 0; transform: translateY(12px);
+}
+
+/* Meta slide */
+.meta-slide-enter-active, .meta-slide-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.meta-slide-enter-from { opacity: 0; transform: translateY(-8px); }
+.meta-slide-leave-to { opacity: 0; transform: translateY(8px); }
+
+/* Image fade */
+.img-fade-enter-active, .img-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.img-fade-enter-from, .img-fade-leave-to { opacity: 0; }
+
+/* Drag fade */
+.drag-fade-enter-active, .drag-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.drag-fade-enter-from, .drag-fade-leave-to { opacity: 0; }
+
+/* Overlay fade */
+.overlay-fade-enter-active, .overlay-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
+
+/* Modal fade */
+.modal-fade-enter-active, .modal-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
