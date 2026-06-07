@@ -159,7 +159,7 @@ export default {
   },
   watch: {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
-    hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) this.drawBoxesAnimated() },
+    hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) this.drawBoxesInstant() },
     selectedBatchImage(val, oldVal) {
       // 只在真正切换图片时清空 override
       if (!val || !oldVal || val.record_id !== oldVal.record_id || val.pen_name !== oldVal.pen_name) {
@@ -179,17 +179,36 @@ export default {
     onResultImgLoad() { this.drawBoxesAnimated() },
     drawBoxesAnimated(overrideBoxes) {
       if (overrideBoxes) this._overrideBoxes = overrideBoxes
+      const { canvas, boxes, imgW, imgH } = this._resolveBoxesAndDims()
+      if (!canvas || !boxes) return
+      const ctx = canvas.getContext('2d')
+      let prog = 0; const total = 30
+      const draw = () => {
+        prog++
+        const t = Math.min(prog / total, 1)
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        this._drawBoxesFrame(ctx, canvas, boxes, imgW, imgH, t)
+        if (prog < total) requestAnimationFrame(draw)
+      }
+      requestAnimationFrame(draw)
+    },
+    drawBoxesInstant() {
+      const { canvas, boxes, imgW, imgH } = this._resolveBoxesAndDims()
+      if (!canvas || !boxes) return
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      this._drawBoxesFrame(ctx, canvas, boxes, imgW, imgH, 1)
+    },
+    _resolveBoxesAndDims() {
       const canvas = this.$refs.boxCanvas
       const img = this.$refs.baseImg
-      if (!canvas || !img) return
-
+      if (!canvas || !img) return {}
       const containerW = img.clientWidth || canvas.parentElement?.clientWidth || 0
       const containerH = img.clientHeight || canvas.parentElement?.clientHeight || 0
-      if (!containerW || !containerH) return
-
+      if (!containerW || !containerH) return {}
       let boxes, imgW, imgH
-      if (overrideBoxes || this._overrideBoxes) {
-        boxes = overrideBoxes || this._overrideBoxes
+      if (this._overrideBoxes) {
+        boxes = this._overrideBoxes
         imgW = this.selectedBatchImage ? this.selectedBatchImage.image_width : (this.imageMeta?.width || 0)
         imgH = this.selectedBatchImage ? this.selectedBatchImage.image_height : (this.imageMeta?.height || 0)
       } else if (this.batchMode && this.selectedBatchResult) {
@@ -200,44 +219,34 @@ export default {
         boxes = this.result && this.result.boxes ? this.result.boxes : []
         imgW = this.imageMeta ? this.imageMeta.width : 0
         imgH = this.imageMeta ? this.imageMeta.height : 0
-      } else {
-        return
-      }
-
+      } else { return {} }
       canvas.width = containerW; canvas.height = containerH
-      const ctx = canvas.getContext('2d')
-      let prog = 0; const total = 60
-      const draw = () => {
-        prog++
-        const t = Math.min(prog / total, 1)
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        boxes.forEach((box, i) => {
-          const bd = boxes.length > 0 ? i / boxes.length * 0.4 : 0
-          const lt = Math.max(0, Math.min(1, (t - bd) / 0.6))
-          if (lt <= 0) return
-          const c = this.resolveCoords(box, canvas, imgW, imgH)
-          const w = c.x2 - c.x1; const h = c.y2 - c.y1
-          const isH = this.hoveredBox === i
-          const col = isH ? 'rgba(255,149,0,' + lt + ')' : 'rgba(52,199,89,' + lt + ')'
-          ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = isH ? 2.5 : 1.8
-          ctx.shadowColor = col; ctx.shadowBlur = isH ? 10 : 5; ctx.globalAlpha = lt
-          ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
-          if (lt > 0.6) {
-            const la = (lt - 0.6) / 0.4
-            // 置信度标签（框上方，带边界检查）
-            ctx.save(); ctx.globalAlpha = la
-            const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
-            ctx.font = 'bold 11px -apple-system,monospace'
-            const tw = ctx.measureText(label).width
-            const labelY = Math.max(2, c.y1 - 22)
-            ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
-            ctx.beginPath(); ctx.roundRect(c.x1, labelY, tw + 12, 20, 4); ctx.fill()
-            ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, labelY + 14); ctx.restore()
-          }
-        })
-        if (prog < total) requestAnimationFrame(draw)
-      }
-      requestAnimationFrame(draw)
+      return { canvas, boxes, imgW, imgH }
+    },
+    _drawBoxesFrame(ctx, canvas, boxes, imgW, imgH, t) {
+      boxes.forEach((box, i) => {
+        const bd = boxes.length > 0 ? i / boxes.length * 0.4 : 0
+        const lt = Math.max(0, Math.min(1, (t - bd) / 0.6))
+        if (lt <= 0) return
+        const c = this.resolveCoords(box, canvas, imgW, imgH)
+        const w = c.x2 - c.x1; const h = c.y2 - c.y1
+        const isH = this.hoveredBox === i
+        const col = isH ? 'rgba(255,149,0,' + lt + ')' : 'rgba(52,199,89,' + lt + ')'
+        ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = isH ? 2.5 : 1.8
+        ctx.shadowColor = col; ctx.shadowBlur = isH ? 10 : 5; ctx.globalAlpha = lt
+        ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
+        if (lt > 0.6) {
+          const la = (lt - 0.6) / 0.4
+          ctx.save(); ctx.globalAlpha = la
+          const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
+          ctx.font = 'bold 11px -apple-system,monospace'
+          const tw = ctx.measureText(label).width
+          const labelY = Math.max(2, c.y1 - 22)
+          ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
+          ctx.beginPath(); ctx.roundRect(c.x1, labelY, tw + 12, 20, 4); ctx.fill()
+          ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, labelY + 14); ctx.restore()
+        }
+      })
     },
     clearCanvas() { const c = this.$refs.boxCanvas; if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height) },
     resolveCoords(box, canvas, metaW, metaH) {
