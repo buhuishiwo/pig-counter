@@ -233,13 +233,6 @@ export default {
             ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
             ctx.beginPath(); ctx.roundRect(c.x1, labelY, tw + 12, 20, 4); ctx.fill()
             ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, labelY + 14); ctx.restore()
-            // 数字标注（框中心）
-            ctx.save(); ctx.globalAlpha = la
-            ctx.font = 'bold 14px -apple-system,sans-serif'
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-            ctx.fillStyle = 'rgba(0,0,0,0.85)'
-            ctx.fillText(String(i + 1), (c.x1 + c.x2) / 2, (c.y1 + c.y2) / 2)
-            ctx.restore()
           }
         })
         if (prog < total) requestAnimationFrame(draw)
@@ -250,10 +243,23 @@ export default {
     resolveCoords(box, canvas, metaW, metaH) {
       const isN = box.x1 <= 1 && box.y1 <= 1
       const sw = canvas.width; const sh = canvas.height
-      const mw = metaW || 1
-      const mh = metaH || 1
-      if (isN) return { x1: box.x1 * sw, y1: box.y1 * sh, x2: (box.x1 + box.x2) * sw, y2: (box.y1 + box.y2) * sh }
-      return { x1: box.x1 / mw * sw, y1: box.y1 / mh * sh, x2: box.x2 / mw * sw, y2: box.y2 / mh * sh }
+      const mw = metaW || 1; const mh = metaH || 1
+
+      // 计算 object-fit: contain 下图片实际渲染区域
+      const scale = Math.min(sw / mw, sh / mh)
+      const renderW = mw * scale; const renderH = mh * scale
+      const offsetX = (sw - renderW) / 2; const offsetY = (sh - renderH) / 2
+
+      if (isN) {
+        return {
+          x1: offsetX + box.x1 * renderW, y1: offsetY + box.y1 * renderH,
+          x2: offsetX + (box.x1 + box.x2) * renderW, y2: offsetY + (box.y1 + box.y2) * renderH
+        }
+      }
+      return {
+        x1: offsetX + box.x1 / mw * renderW, y1: offsetY + box.y1 / mh * renderH,
+        x2: offsetX + box.x2 / mw * renderW, y2: offsetY + box.y2 / mh * renderH
+      }
     }
   }
 }

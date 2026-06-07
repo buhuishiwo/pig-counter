@@ -98,6 +98,7 @@
       :inferenceTime="selectedBatchImage.processing_time_ms" @hover="onDetailHover" />
 
     <LogPanel />
+  </div>
 
     <!-- 编辑标注弹窗（v1.0 原始逻辑，直接内联） -->
     <div v-if="showEditModal" class="edit-modal" @click="closeEditModal">
@@ -151,7 +152,6 @@
         </div>
       </div>
     </div>
-  </div>
   </div>
 </template>
 
