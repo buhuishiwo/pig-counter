@@ -29,13 +29,13 @@
         </template>
       </div>
       <div class="img-card-header-right">
-        <button v-if="hasResult" class="btn-header" @click="$emit('edit')" title="编辑标注">
+        <button v-if="hasResult || (batchMode && selectedBatchImage)" class="btn-header" @click="$emit('edit')" title="编辑标注">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
           </svg>
           编辑标注
         </button>
-        <button v-if="hasResult" class="btn-header btn-header--primary" @click="$emit('export')" title="导出图片">
+        <button v-if="hasResult || (batchMode && selectedBatchImage)" class="btn-header btn-header--primary" @click="$emit('export')" title="导出图片">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
