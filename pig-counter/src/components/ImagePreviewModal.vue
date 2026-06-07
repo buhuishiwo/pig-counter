@@ -11,7 +11,7 @@
         </button>
         <div class="preview-content">
           <img :src="annotatedImage" class="preview-image" alt="识别结果大图" />
-          <div class="preview-info">
+          <div v-if="showInfo" class="preview-info">
             <span class="preview-badge">检测到 {{ pigCount }} 头猪</span>
             <span class="preview-badge">置信度 {{ confidencePct }}%</span>
           </div>
@@ -28,7 +28,8 @@ export default {
     visible: { type: Boolean, default: false },
     annotatedImage: { type: String, default: null },
     pigCount: { type: Number, default: 0 },
-    confidencePct: { type: Number, default: 0 }
+    confidencePct: { type: Number, default: 0 },
+    showInfo: { type: Boolean, default: true }
   }
 }
 </script>
@@ -104,16 +105,17 @@ export default {
 
 .preview-info {
   display: flex;
-  gap: 12px
+  gap: 12px;
+  margin-top: -5px
 }
 
 .preview-badge {
   padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.85);
   border-radius: 20px;
   font-size: 14px;
   font-weight: 500;
-  color: #fff;
+  color: #000;
   backdrop-filter: blur(4px)
 }
 

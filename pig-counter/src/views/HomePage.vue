@@ -70,7 +70,8 @@
         :imageCount="$store.state.imageFiles.length" :currentImageIndex="$store.state.currentImageIndex"
         :farmSelected="!!selectedFarmId" @files-selected="onTopFileChange"
         @batch-folder-selected="onBatchFolderChange" @need-farm="triggerWarningFlash"
-        @prev="prevImage" @next="nextImage" />
+        @prev="prevImage" @next="nextImage"
+        @open-preview="$emit('open-preview', 'original')" />
       <ResultImageCard ref="resultCard"
         :hasImage="hasImage" :hasResult="hasResult" :annotatedImage="annotatedImage"
         :previewUrl="previewUrl" :isAnalyzing="isAnalyzing" :result="result" :imageMeta="imageMeta"
@@ -81,7 +82,7 @@
         :batchTotalPhotos="batchResults?.total_photos" :batchUnitCount="batchResults?.units?.length"
         :batchAnnotatedImages="batchAnnotatedImages" :selectedBatchImage="selectedBatchImage"
         :selectedBatchResult="selectedBatchResult" :batchImageIndex="batchImageIndex"
-        @open-preview="$emit('open-preview')" @prev="batchTree ? prevBatchImage() : prevImage()"
+        @open-preview="$emit('open-preview', 'annotated')" @prev="batchTree ? prevBatchImage() : prevImage()"
         @next="batchTree ? nextBatchImage() : nextImage()" @edit="openEditModal" @export="exportAnnotatedImage" />
     </div>
 

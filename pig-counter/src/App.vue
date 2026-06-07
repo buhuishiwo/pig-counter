@@ -10,9 +10,10 @@
 
     <ImagePreviewModal
       :visible="showImagePreview"
-      :annotatedImage="previewAnnotatedImage"
-      :pigCount="previewPigCount"
-      :confidencePct="previewConfidencePct"
+      :annotatedImage="previewImageSrc"
+      :pigCount="previewType === 'annotated' ? previewPigCount : 0"
+      :confidencePct="previewType === 'annotated' ? previewConfidencePct : 0"
+      :showInfo="previewType === 'annotated'"
       @close="closeImagePreview"
     />
 
@@ -55,6 +56,7 @@ export default {
   setup() {
     const store = useStore()
     const showImagePreview = ref(false)
+    const previewType = ref('annotated')
 
     const notify = useNotify()
     const stats = useStats()
@@ -81,13 +83,19 @@ export default {
     const result = computed(() => store.state.result)
     const previewUrl = computed(() => store.state.previewUrl)
     const imageMeta = computed(() => store.state.imageMeta)
+
+    const previewImageSrc = computed(() => {
+      if (previewType.value === 'original') return previewUrl.value
+      return annotatedImage.value
+    })
     const selectedFarmId = computed({
       get: () => store.state.selectedFarmId,
       set: (val) => store.commit('SET_FARM', val)
     })
     const currentFarmName = computed(() => farm.currentFarmName(selectedFarmId.value))
 
-    function openImagePreview() {
+    function openImagePreview(type = 'annotated') {
+      previewType.value = type
       showImagePreview.value = true
       document.body.style.overflow = 'hidden'
     }
@@ -143,12 +151,12 @@ export default {
     })
 
     return {
-      showImagePreview,
+      showImagePreview, previewType,
       notify: notify.notify, closeNotify: notify.closeNotify,
       farms: farm.farms, showFarmModal: farm.showFarmModal,
       closeFarmModal: farm.closeFarmModal,
       onFarmAdded: farm.onFarmAdded, onFarmUpdated: farm.onFarmUpdated, onFarmDeleted: farm.onFarmDeleted,
-      previewAnnotatedImage: annotatedImage, previewPigCount: pigCount, previewConfidencePct: confidencePct,
+      previewImageSrc, previewPigCount: pigCount, previewConfidencePct: confidencePct,
       openImagePreview, closeImagePreview
     }
   }

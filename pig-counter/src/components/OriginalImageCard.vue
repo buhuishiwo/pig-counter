@@ -81,7 +81,8 @@ export default {
   methods: {
     handleClick() {
       if (!this.farmSelected) { this.$emit('need-farm'); return }
-      if (!this.hasImage) this.$refs.dropInput.click()
+      if (this.hasImage) { this.$emit('open-preview'); return }
+      this.$refs.dropInput.click()
     },
     onInputChange(e) {
       const files = Array.from(e.target.files)
@@ -281,7 +282,7 @@ export default {
 .dropzone--filled {
   border-style: solid;
   border-color: var(--sep);
-  cursor: default
+  cursor: pointer
 }
 
 .dropzone--disabled {
