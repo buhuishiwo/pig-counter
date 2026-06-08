@@ -1,50 +1,4 @@
 <template>
-  <div>
-    <TopBar
-      :scrolled="scrolled"
-      :isAnalyzing="isAnalyzing"
-      :uploadProgress="uploadProgress"
-      :hasResult="hasResult || !!batchResults"
-      :hasImage="hasImage"
-      :batchTree="batchTree"
-      :selectedFarmId="selectedFarmId"
-      :serviceOnline="$store.state.serviceOnline"
-      :farmName="currentFarmName"
-      :farms="farms"
-      :showFarmDropdown="showFarmDropdown"
-      :routePath="$route.path"
-      @service-online="onServiceOnline"
-      @toggle-farm-dropdown="toggleFarmDropdown"
-      @select-farm="selectFarmWrapper"
-      @manage-farm="showFarmModal = true"
-      @file-change="onTopFileChange"
-      @batch-folder-change="onBatchFolderChange"
-      @analyze="handleAnalyzeWrapper"
-      @clear-image="clearImage"
-      @need-farm="triggerWarningFlash"
-      @close-dropdown="showFarmDropdown = false"
-    />
-    <CapsuleNav
-      :scrolled="scrolled"
-      :isAnalyzing="isAnalyzing"
-      :hasResult="hasResult || !!batchResults"
-      :hasImage="hasImage"
-      :batchTree="batchTree"
-      :selectedFarmId="selectedFarmId"
-      :serviceOnline="$store.state.serviceOnline"
-      :farmName="currentFarmName"
-      :farms="farms"
-      :showFarmDropdown="showFarmDropdown"
-      :routePath="$route.path"
-      @service-online="onServiceOnline"
-      @toggle-farm-dropdown="toggleFarmDropdown"
-      @select-farm="selectFarmWrapper"
-      @manage-farm="showFarmModal = true"
-      @analyze="handleAnalyzeWrapper"
-      @clear-image="clearImage"
-      @need-farm="triggerWarningFlash"
-      @close-dropdown="showFarmDropdown = false"
-    />
   <div class="page-wrap">
     <div class="top-info-row">
       <div class="current-farm-section">
@@ -86,7 +40,7 @@
         @next="batchTree ? nextBatchImage() : nextImage()" @edit="openEditModal" @export="exportAnnotatedImage" />
     </div>
 
-    <DetectionDetailTable v-if="!batchResults || !selectedBatchImage"
+    <DetectionDetailTable v-if="hasResult && (!batchResults || !selectedBatchImage)"
       :boxes="activeResult?.boxes || []" :pigCount="activeResult?.count ?? pigCount"
       :confidencePct="confidencePct" :confClass="confClass" :hoveredBox="hoveredBox"
       :imageMeta="imageMeta" :inferenceTime="inferenceTime" @hover="onDetailHover" />
@@ -153,15 +107,12 @@
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <script>
 import { ref, computed, watch, nextTick, inject, onMounted, onBeforeUnmount } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import TopBar from '@/components/TopBar.vue'
-import CapsuleNav from '@/components/CapsuleNav.vue'
 import LogPanel from '@/components/LogPanel.vue'
 import FarmInfoCard from '@/components/FarmInfoCard.vue'
 import SystemStatsCard from '@/components/SystemStatsCard.vue'
@@ -174,7 +125,7 @@ import ResultImageCard from '@/components/ResultImageCard.vue'
 
 export default {
   name: 'HomePage',
-  components: { TopBar, CapsuleNav, LogPanel, FarmInfoCard, SystemStatsCard, StatCardsRow, DetectionDetailTable, BatchFolderUploader, BatchResultsTable, OriginalImageCard, ResultImageCard },
+  components: { LogPanel, FarmInfoCard, SystemStatsCard, StatCardsRow, DetectionDetailTable, BatchFolderUploader, BatchResultsTable, OriginalImageCard, ResultImageCard },
   emits: ['open-preview'],
 
   setup(props, { emit }) {

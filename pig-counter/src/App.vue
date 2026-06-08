@@ -4,6 +4,52 @@
       <div class="ambient-grid"></div>
     </div>
 
+    <TopBar
+      :scrolled="scrolled"
+      :isAnalyzing="isAnalyzing"
+      :uploadProgress="uploadProgress"
+      :hasResult="hasResult"
+      :hasImage="hasImage"
+      :batchTree="batchTree"
+      :selectedFarmId="selectedFarmId"
+      :serviceOnline="$store.state.serviceOnline"
+      :farmName="currentFarmName"
+      :farms="farms"
+      :showFarmDropdown="showFarmDropdown"
+      :routePath="$route.path"
+      @service-online="onServiceOnline"
+      @toggle-farm-dropdown="toggleFarmDropdown"
+      @select-farm="selectFarmWrapper"
+      @manage-farm="showFarmModal = true"
+      @file-change="onTopFileChange"
+      @batch-folder-change="onBatchFolderChange"
+      @analyze="handleAnalyzeWrapper"
+      @clear-image="clearImage"
+      @need-farm="triggerWarningFlash"
+      @close-dropdown="showFarmDropdown = false"
+    />
+    <CapsuleNav
+      :scrolled="scrolled"
+      :isAnalyzing="isAnalyzing"
+      :hasResult="hasResult"
+      :hasImage="hasImage"
+      :batchTree="batchTree"
+      :selectedFarmId="selectedFarmId"
+      :serviceOnline="$store.state.serviceOnline"
+      :farmName="currentFarmName"
+      :farms="farms"
+      :showFarmDropdown="showFarmDropdown"
+      :routePath="$route.path"
+      @service-online="onServiceOnline"
+      @toggle-farm-dropdown="toggleFarmDropdown"
+      @select-farm="selectFarmWrapper"
+      @manage-farm="showFarmModal = true"
+      @analyze="handleAnalyzeWrapper"
+      @clear-image="clearImage"
+      @need-farm="triggerWarningFlash"
+      @close-dropdown="showFarmDropdown = false"
+    />
+
     <router-view @open-preview="openImagePreview" />
 
     <AppFooter />
@@ -37,8 +83,10 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, provide } from 'vue'
 import { useStore } from 'vuex'
+import TopBar from '@/components/TopBar.vue'
+import CapsuleNav from '@/components/CapsuleNav.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import ImagePreviewModal from '@/components/ImagePreviewModal.vue'
 import FarmManagementModal from '@/components/FarmManagementModal.vue'
@@ -51,7 +99,7 @@ import { useDetection } from '@/composables/useDetection'
 
 export default {
   name: 'App',
-  components: { AppFooter, ImagePreviewModal, FarmManagementModal, NotificationCard },
+  components: { TopBar, CapsuleNav, AppFooter, ImagePreviewModal, FarmManagementModal, NotificationCard },
 
   setup() {
     const store = useStore()
@@ -83,6 +131,10 @@ export default {
     const result = computed(() => store.state.result)
     const previewUrl = computed(() => store.state.previewUrl)
     const imageMeta = computed(() => store.state.imageMeta)
+    const isAnalyzing = computed(() => store.state.isAnalyzing)
+    const uploadProgress = computed(() => store.state.uploadProgress)
+    const hasResult = computed(() => store.getters.hasResult)
+    const hasImage = computed(() => store.getters.hasImage)
 
     const previewImageSrc = computed(() => {
       if (previewType.value === 'original') return previewUrl.value
@@ -93,6 +145,69 @@ export default {
       set: (val) => store.commit('SET_FARM', val)
     })
     const currentFarmName = computed(() => farm.currentFarmName(selectedFarmId.value))
+
+    const scrolled = ref(false)
+    const warningFlash = ref(false)
+    const onScroll = () => { scrolled.value = window.scrollY > 80 }
+    onMounted(() => { window.addEventListener('scroll', onScroll); onScroll() })
+    onBeforeUnmount(() => { window.removeEventListener('scroll', onScroll) })
+
+    function selectFarmWrapper(farmId) {
+      farm.selectFarm(farmId, farm.onFarmChange)
+    }
+
+    function triggerWarningFlash() {
+      if (selectedFarmId.value && (hasImage.value || batch.batchTree.value)) return
+      warningFlash.value = true
+      setTimeout(() => { warningFlash.value = false }, 1300)
+    }
+
+    function onTopFileChange(files) {
+      if (files.length > 0) detection.processFiles(files)
+    }
+
+    function handleAnalyzeWrapper() {
+      if (batch.batchTree.value && !hasImage.value) {
+        batch.runBatchAnalysis()
+      } else {
+        runSingleAnalysis()
+      }
+    }
+
+    async function runSingleAnalysis() {
+      if (!hasImage.value || isAnalyzing.value || !selectedFarmId.value) return
+      if (!store.state.serviceOnline) {
+        store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
+        notify.showNotify('error', '服务不可用', '后端服务离线，无法识别图片')
+        return
+      }
+      store.commit('SET_ANALYZING', true)
+      store.commit('SET_PROGRESS', 0)
+      const { analyzeImage } = await import('@/api/pigModel')
+      const imageFiles = store.state.imageFiles.length > 0 ? store.state.imageFiles : [store.state.imageFile]
+      store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
+      try {
+        const result = await analyzeImage(imageFiles, (p) => { store.commit('SET_PROGRESS', p) }, selectedFarmId.value)
+        if (result.totalImages) {
+          store.commit('SET_RESULTS', { results: result.results, totalPigs: result.totalPigs })
+          if (!window.__modelOriginalCount) window.__modelOriginalCount = result.totalPigs
+          store.commit('SET_PROGRESS', 100)
+          setTimeout(() => notify.showNotify('success', '识别完成', `${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`), 500)
+          store.commit('ADD_LOG', { msg: `识别完成：${result.totalImages} 张，共 ${result.totalPigs} 头猪`, type: 'success' })
+        } else {
+          store.commit('SET_RESULT', result)
+          if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
+          store.commit('SET_PROGRESS', 100)
+          setTimeout(() => notify.showNotify('success', '识别完成', `检测到 ${result.count} 头猪`), 500)
+          store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+        }
+        await stats.loadDetectionStats()
+      } catch (err) {
+        const isCancel = err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED'
+        if (isCancel) { store.commit('ADD_LOG', { msg: '识别已取消', type: 'info' }) }
+        else { store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' }); notify.showNotify('error', '识别失败', err.message) }
+      } finally { store.commit('SET_ANALYZING', false) }
+    }
 
     function openImagePreview(type = 'annotated') {
       previewType.value = type
@@ -151,11 +266,16 @@ export default {
     })
 
     return {
-      showImagePreview, previewType,
+      scrolled, showImagePreview, previewType, warningFlash,
       notify: notify.notify, closeNotify: notify.closeNotify,
-      farms: farm.farms, showFarmModal: farm.showFarmModal,
+      farms: farm.farms, showFarmModal: farm.showFarmModal, showFarmDropdown: farm.showFarmDropdown,
       closeFarmModal: farm.closeFarmModal,
       onFarmAdded: farm.onFarmAdded, onFarmUpdated: farm.onFarmUpdated, onFarmDeleted: farm.onFarmDeleted,
+      onServiceOnline: farm.onServiceOnline, toggleFarmDropdown: farm.toggleFarmDropdown, selectFarmWrapper,
+      selectedFarmId, hasImage, hasResult, isAnalyzing, uploadProgress,
+      currentFarmName, batchTree: batch.batchTree,
+      onTopFileChange, onBatchFolderChange: batch.onBatchFolderChange, clearImage: detection.clearImage,
+      triggerWarningFlash, handleAnalyzeWrapper,
       previewImageSrc, previewPigCount: pigCount, previewConfidencePct: confidencePct,
       openImagePreview, closeImagePreview
     }
