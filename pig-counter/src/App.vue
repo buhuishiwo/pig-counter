@@ -138,6 +138,10 @@ export default {
 
     const previewImageSrc = computed(() => {
       if (previewType.value === 'original') return previewUrl.value
+      // 批量模式：用当前选中的批量图片
+      if (batch.batchResults.value && batch.selectedBatchImage.value) {
+        return batch.selectedBatchImage.value.url
+      }
       return annotatedImage.value
     })
     const selectedFarmId = computed({
@@ -276,7 +280,15 @@ export default {
       currentFarmName, batchTree: batch.batchTree,
       onTopFileChange, onBatchFolderChange: batch.onBatchFolderChange, clearImage: detection.clearImage,
       triggerWarningFlash, handleAnalyzeWrapper,
-      previewImageSrc, previewPigCount: pigCount, previewConfidencePct: confidencePct,
+      previewImageSrc,
+      previewPigCount: computed(() => {
+        if (batch.batchResults.value && batch.selectedBatchImage.value) return batch.selectedBatchImage.value.pig_count
+        return pigCount.value
+      }),
+      previewConfidencePct: computed(() => {
+        if (batch.batchResults.value && batch.selectedBatchImage.value) return Math.round(batch.selectedBatchImage.value.confidence * 100)
+        return confidencePct.value
+      }),
       openImagePreview, closeImagePreview
     }
   }

@@ -52,7 +52,7 @@ export default {
   padding: 0;
   overflow: hidden;
   height: 100%;
-  animation: sectionIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+  animation: sectionIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes sectionIn { from { opacity: 0 } to { opacity: 1 } }
 

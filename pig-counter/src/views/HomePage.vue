@@ -12,13 +12,15 @@
     <StatCardsRow :cards="statCards" :animatedCount="animatedCount" />
 
     <div class="image-row">
-      <BatchFolderUploader v-if="batchTree && (!batchResults || showFolderTree)"
-        :batchTree="batchTree" :processing="batchProcessing" :hasResults="!!batchResults"
-        @analyze="runBatchAnalysis" @clear="clearBatch"
-        @show-results="showFolderTree = false" @re-upload="triggerBatchReUpload" @download-excel="downloadBatchExcel" />
-      <BatchResultsTable v-else-if="batchResults && !showFolderTree"
-        :batchResults="batchResults" @download="downloadBatchExcel" @clear="clearBatch"
-        @back="backToFolderTree" @edit="openEditModal" @export="exportAnnotatedImage" />
+      <template v-if="batchTree">
+        <BatchFolderUploader v-show="!batchResults || showFolderTree"
+          :batchTree="batchTree" :processing="batchProcessing" :hasResults="!!batchResults"
+          @analyze="runBatchAnalysis" @clear="clearBatch"
+          @show-results="showFolderTree = false" @re-upload="triggerBatchReUpload" @download-excel="downloadBatchExcel" />
+        <BatchResultsTable v-show="batchResults && !showFolderTree"
+          :batchResults="batchResults" @download="downloadBatchExcel" @clear="clearBatch"
+          @back="backToFolderTree" @edit="openEditModal" @export="exportAnnotatedImage" />
+      </template>
       <OriginalImageCard v-else
         :hasImage="hasImage" :previewUrl="previewUrl" :imageMeta="imageMeta"
         :imageCount="$store.state.imageFiles.length" :currentImageIndex="$store.state.currentImageIndex"
@@ -217,14 +219,17 @@ export default {
     const editDrawEnd = ref(null)
     const editHint = ref('select')
     const editMode = ref('add')
+    const _editInitialBoxCount = ref(0)
 
     function openEditModal() {
       let boxes, recordId, imageUrl
       if (batchResults.value && selectedBatchImage.value) {
         boxes = selectedBatchImage.value.boxes || []
         recordId = selectedBatchImage.value.record_id || null
-        const matchFile = farmState.batchFiles?.value?.find(f => f.name === selectedBatchImage.value.pen_name)
-        imageUrl = matchFile ? URL.createObjectURL(matchFile) : selectedBatchImage.value.url
+        // 用 index 从 batchFiles 取原图（batchFiles 和 batchAnnotatedImages 同源同序）
+        const idx = batchImageIndex.value
+        const originalFile = farmState.batchFiles?.value?.[idx]
+        imageUrl = originalFile ? URL.createObjectURL(originalFile) : selectedBatchImage.value.url
       } else if (result.value) {
         boxes = result.value.boxes || []
         recordId = result.value.recordId || null
@@ -232,6 +237,7 @@ export default {
       } else { return }
       if (!boxes.length) return
       editBoxes.value = JSON.parse(JSON.stringify(boxes))
+      _editInitialBoxCount.value = boxes.length
       editRecordId.value = recordId
       editImageUrl.value = imageUrl
       editImgKey.value++
@@ -285,16 +291,20 @@ export default {
         canvas.width = Math.round(rect.width)
         canvas.height = Math.round(rect.height)
       }
-      const imgW = imageMeta.value?.width || selectedBatchImage.value?.image_width || img.naturalWidth
-      const imgH = imageMeta.value?.height || selectedBatchImage.value?.image_height || img.naturalHeight
+      // 用图片实际尺寸做坐标映射（和缩略图 resolveCoords 逻辑一致）
+      const imgW = img.naturalWidth
+      const imgH = img.naturalHeight
       if (!imgW || !imgH) return
-      const scaleX = canvas.width / imgW
-      const scaleY = canvas.height / imgH
+      const scale = Math.min(canvas.width / imgW, canvas.height / imgH)
+      const renderW = imgW * scale, renderH = imgH * scale
+      const offsetX = (canvas.width - renderW) / 2, offsetY = (canvas.height - renderH) / 2
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       editBoxes.value.forEach((box, i) => {
-        const x1 = box.x1 * scaleX, y1 = box.y1 * scaleY
-        const x2 = box.x2 * scaleX, y2 = box.y2 * scaleY
+        const x1 = offsetX + box.x1 / imgW * renderW
+        const y1 = offsetY + box.y1 / imgH * renderH
+        const x2 = offsetX + box.x2 / imgW * renderW
+        const y2 = offsetY + box.y2 / imgH * renderH
         const isSelected = i === editSelectedIndex.value
         const color = isSelected ? 'rgba(255, 149, 0, 0.8)' : 'rgba(52, 199, 89, 0.7)'
         ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = isSelected ? 2.5 : 1.8
@@ -314,7 +324,15 @@ export default {
       const canvasY = (e.clientY - rect.top) / rect.height * canvas.height
       const imgW = imageMeta.value?.width || selectedBatchImage.value?.image_width || img.naturalWidth
       const imgH = imageMeta.value?.height || selectedBatchImage.value?.image_height || img.naturalHeight
-      return { cx: canvasX, cy: canvasY, imgX: canvasX / canvas.width * imgW, imgY: canvasY / canvas.height * imgH, scaleX: canvas.width / imgW, scaleY: canvas.height / imgH }
+      const scale = Math.min(canvas.width / imgW, canvas.height / imgH)
+      const renderW = imgW * scale, renderH = imgH * scale
+      const offsetX = (canvas.width - renderW) / 2, offsetY = (canvas.height - renderH) / 2
+      return {
+        cx: canvasX, cy: canvasY,
+        imgX: (canvasX - offsetX) / renderW * imgW,
+        imgY: (canvasY - offsetY) / renderH * imgH,
+        scaleX: renderW / imgW, scaleY: renderH / imgH
+      }
     }
 
     function onEditCanvasMouseDown(e) {
