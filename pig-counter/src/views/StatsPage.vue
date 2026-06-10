@@ -640,8 +640,7 @@ export default {
         this.$nextTick(() => {
           this.updateTimeSeriesChart()
         })
-      },
-      deep: true
+      }
     }
   },
 
