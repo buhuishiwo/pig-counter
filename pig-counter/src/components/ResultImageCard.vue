@@ -159,10 +159,11 @@ export default {
   },
   beforeUnmount() {
     if (this._drawRafId) cancelAnimationFrame(this._drawRafId)
+    if (this._hoverRafId) cancelAnimationFrame(this._hoverRafId)
   },
   watch: {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
-    hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) this.drawBoxesInstant() },
+    hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) { if (this._hoverRafId) cancelAnimationFrame(this._hoverRafId); this._hoverRafId = requestAnimationFrame(() => this.drawBoxesInstant()) } },
     selectedBatchImage(val, oldVal) {
       // 只在真正切换图片时清空 override
       if (!val || !oldVal || val.record_id !== oldVal.record_id || val.pen_name !== oldVal.pen_name) {
