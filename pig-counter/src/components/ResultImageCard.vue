@@ -157,6 +157,9 @@ export default {
       return 'conf-low'
     }
   },
+  beforeUnmount() {
+    if (this._drawRafId) cancelAnimationFrame(this._drawRafId)
+  },
   watch: {
     hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
     hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) this.drawBoxesInstant() },
@@ -179,6 +182,7 @@ export default {
     onResultImgLoad() { this.drawBoxesAnimated() },
     drawBoxesAnimated(overrideBoxes) {
       if (overrideBoxes) this._overrideBoxes = overrideBoxes
+      if (this._drawRafId) cancelAnimationFrame(this._drawRafId)
       const { canvas, boxes, imgW, imgH } = this._resolveBoxesAndDims()
       if (!canvas || !boxes) return
       const ctx = canvas.getContext('2d')
@@ -188,9 +192,9 @@ export default {
         const t = Math.min(prog / total, 1)
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         this._drawBoxesFrame(ctx, canvas, boxes, imgW, imgH, t)
-        if (prog < total) requestAnimationFrame(draw)
+        if (prog < total) this._drawRafId = requestAnimationFrame(draw)
       }
-      requestAnimationFrame(draw)
+      this._drawRafId = requestAnimationFrame(draw)
     },
     drawBoxesInstant() {
       const { canvas, boxes, imgW, imgH } = this._resolveBoxesAndDims()
