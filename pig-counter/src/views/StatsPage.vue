@@ -477,12 +477,12 @@
 </template>
 
 <script>
-import { Chart, registerables } from 'chart.js'
+import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler } from 'chart.js'
 import { getStatsByFarm, getDetectionStats, getDetectionRecordsWithImages, getTimeSeriesStats } from '@/api/statsApi'
 import { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn } from '@lucide/vue'
 
-// 注册 Chart.js 组件
-Chart.register(...registerables)
+// 按需注册 Chart.js 组件（仅 Line 图表所需）
+Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler)
 
 export default {
   name: 'StatsPage',
