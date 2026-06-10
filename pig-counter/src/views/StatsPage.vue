@@ -472,13 +472,6 @@
       </div>
     </transition>
 
-    <footer class="footer">
-      <span class="footer-brand">智慧猪群识别系统</span>
-      <span class="footer-dot">·</span>
-      <span>Powered By 智能数猪大模型</span>
-      <span class="footer-dot">·</span>
-      <span>© {{ year }}</span>
-    </footer>
     <div v-if="tooltipVisible" class="custom-tooltip" :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }">{{ tooltipText }}</div>
   </div>
 </template>
