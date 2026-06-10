@@ -180,7 +180,7 @@ export default {
     }
   },
   methods: {
-    onResultImgLoad() { this.drawBoxesAnimated() },
+    onResultImgLoad() { this.drawBoxesInstant() },
     drawBoxesAnimated(overrideBoxes) {
       if (overrideBoxes) this._overrideBoxes = overrideBoxes
       if (this._drawRafId) cancelAnimationFrame(this._drawRafId)
