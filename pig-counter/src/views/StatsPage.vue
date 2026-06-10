@@ -622,6 +622,10 @@ export default {
 
   beforeUnmount() {
     document.removeEventListener('click', this._closeDropdown)
+    if (this._chartMouseListeners) {
+      this._chartMouseListeners.forEach(({ el, event, fn }) => el.removeEventListener(event, fn))
+      this._chartMouseListeners = null
+    }
     if (this.timeSeriesChart) {
       this.timeSeriesChart.stop()
       this.timeSeriesChart.destroy()
