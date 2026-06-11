@@ -105,6 +105,7 @@ export default {
     const store = useStore()
     const showImagePreview = ref(false)
     const previewType = ref('annotated')
+    const previewFullImage = ref(null)
 
     const notify = useNotify()
     const stats = useStats()
@@ -138,7 +139,7 @@ export default {
 
     const previewImageSrc = computed(() => {
       if (previewType.value === 'original') return previewUrl.value
-      // 批量模式：用当前选中的批量图片
+      if (previewFullImage.value) return previewFullImage.value
       if (batch.batchResults.value && batch.selectedBatchImage.value) {
         return batch.selectedBatchImage.value.url
       }
@@ -215,11 +216,22 @@ export default {
 
     function openImagePreview(type = 'annotated') {
       previewType.value = type
+      previewFullImage.value = null
       showImagePreview.value = true
       document.body.style.overflow = 'hidden'
+      if (type === 'annotated' && batch.batchResults.value && batch.selectedBatchImage.value) {
+        const recordId = batch.selectedBatchImage.value.record_id
+        if (recordId) {
+          fetch(`/api/detection-records/${recordId}`)
+            .then(r => r.json())
+            .then(data => { if (data.annotated_image) previewFullImage.value = data.annotated_image })
+            .catch(() => {})
+        }
+      }
     }
     function closeImagePreview() {
       showImagePreview.value = false
+      previewFullImage.value = null
       document.body.style.overflow = ''
     }
 
