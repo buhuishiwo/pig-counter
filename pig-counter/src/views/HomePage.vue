@@ -34,7 +34,7 @@
         :hoveredBox="hoveredBox" :inferenceTime="inferenceTime" :confidencePct="confidencePct"
         :confClass="confClass" :pigCount="pigCount" :resultsCount="$store.state.results.length"
         :currentImageIndex="$store.state.currentImageIndex" :batchMode="!!batchTree"
-        :batchProcessing="batchProcessing" :batchTotalPigs="batchResults?.total_pigs"
+        :batchProcessing="batchProcessing" :batchFullLoading="batchFullLoading" :batchTotalPigs="batchResults?.total_pigs"
         :batchTotalPhotos="batchResults?.total_photos" :batchUnitCount="batchResults?.units?.length"
         :batchAnnotatedImages="batchAnnotatedImages" :selectedBatchImage="selectedBatchImage"
         :selectedBatchResult="selectedBatchResult" :batchImageIndex="batchImageIndex"
@@ -151,6 +151,7 @@ export default {
     const batchTree = farmState.batchTree
     const batchResults = farmState.batchResults
     const batchProcessing = farmState.batchProcessing
+    const batchFullLoading = farmState.batchFullLoading
     const batchImageIndex = farmState.batchImageIndex
     const showFolderTree = farmState.showFolderTree
     const batchAnnotatedImages = farmState.batchAnnotatedImages

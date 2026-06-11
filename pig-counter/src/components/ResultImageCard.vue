@@ -146,7 +146,8 @@ export default {
     batchAnnotatedImages: { type: Array, default: () => [] },
     selectedBatchImage: { type: Object, default: null },
     selectedBatchResult: { type: Object, default: null },
-    batchImageIndex: { type: Number, default: 0 }
+    batchImageIndex: { type: Number, default: 0 },
+    batchFullLoading: { type: Boolean, default: false }
   },
   computed: {
     batchConfClass() {
@@ -162,25 +163,28 @@ export default {
     if (this._hoverRafId) cancelAnimationFrame(this._hoverRafId)
   },
   watch: {
-    hasResult(val) { if (val) this.$nextTick(() => this.drawBoxesAnimated()) },
-    hoveredBox() { if (this.hasResult || (this.batchMode && this.selectedBatchImage)) { if (this._hoverRafId) cancelAnimationFrame(this._hoverRafId); this._hoverRafId = requestAnimationFrame(() => this.drawBoxesInstant()) } },
+    hasResult(val) { if (val && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated()) },
+    hoveredBox() { if (this.batchFullLoading) return; if (this.hasResult || (this.batchMode && this.selectedBatchImage)) { if (this._hoverRafId) cancelAnimationFrame(this._hoverRafId); this._hoverRafId = requestAnimationFrame(() => this.drawBoxesInstant()) } },
     selectedBatchImage(val, oldVal) {
       // 只在真正切换图片时清空 override
       if (!val || !oldVal || val.record_id !== oldVal.record_id || val.pen_name !== oldVal.pen_name) {
         this._overrideBoxes = null
       }
-      if (val) this.$nextTick(() => this.drawBoxesAnimated())
+      if (val && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated())
     },
-    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage) this.$nextTick(() => this.drawBoxesAnimated()) },
+    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated()) },
     selectedBatchResult(val) {
-      if (val && this.batchMode) {
+      if (val && this.batchMode && !this.batchFullLoading) {
         this._overrideBoxes = null
         this.$nextTick(() => this.drawBoxesAnimated())
       }
+    },
+    batchFullLoading(val, oldVal) {
+      if (oldVal && !val) this.$nextTick(() => this.drawBoxesInstant())
     }
   },
   methods: {
-    onResultImgLoad() { this.drawBoxesInstant() },
+    onResultImgLoad() { if (this.batchFullLoading) return; this.drawBoxesInstant() },
     drawBoxesAnimated(overrideBoxes) {
       if (overrideBoxes) this._overrideBoxes = overrideBoxes
       if (this._drawRafId) cancelAnimationFrame(this._drawRafId)

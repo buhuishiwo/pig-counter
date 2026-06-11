@@ -9,6 +9,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   const batchTree = ref(null)
   const batchResults = ref(null)
   const batchProcessing = ref(false)
+  const batchFullLoading = ref(false)
   const batchImageIndex = ref(0)
   const showFolderTree = ref(false)
 
@@ -127,6 +128,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         const err = await resp.json()
         throw new Error(err.detail || '上传失败')
       }
+      batchFullLoading.value = true
       batchResults.value = await resp.json()
       updateToastProgress(100)
       closeNotify()
@@ -153,18 +155,23 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
 
   async function loadBatchFullImages() {
     if (!batchResults.value?.units) return
-    for (const unit of batchResults.value.units) {
-      for (const pen of unit.pens) {
-        if (!pen.record_id) continue
-        try {
-          const res = await fetch(`/api/detection-records/${pen.record_id}`)
-          if (!res.ok) continue
-          const data = await res.json()
-          if (data.annotated_image) pen.annotated_image = data.annotated_image
-        } catch (_) {}
+    let updated = false
+    try {
+      for (const unit of batchResults.value.units) {
+        for (const pen of unit.pens) {
+          if (!pen.record_id || pen.annotated_image) continue
+          try {
+            const res = await fetch(`/api/detection-records/${pen.record_id}`)
+            if (!res.ok) continue
+            const data = await res.json()
+            if (data.annotated_image) { pen.annotated_image = data.annotated_image; updated = true }
+          } catch (_) {}
+        }
       }
+      if (updated) batchResults.value = { ...batchResults.value }
+    } finally {
+      batchFullLoading.value = false
     }
-    batchResults.value = { ...batchResults.value }
   }
 
   async function downloadBatchExcel() {
@@ -228,6 +235,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     batchTree,
     batchResults,
     batchProcessing,
+    batchFullLoading,
     batchImageIndex,
     showFolderTree,
     batchAnnotatedImages,

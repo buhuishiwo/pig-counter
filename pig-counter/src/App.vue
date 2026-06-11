@@ -239,6 +239,7 @@ export default {
       batchTree: batch.batchTree,
       batchResults: batch.batchResults,
       batchProcessing: batch.batchProcessing,
+      batchFullLoading: batch.batchFullLoading,
       batchImageIndex: batch.batchImageIndex,
       showFolderTree: batch.showFolderTree,
       batchAnnotatedImages: batch.batchAnnotatedImages,
