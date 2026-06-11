@@ -294,7 +294,7 @@ def predict_image(
         predicted_count=len(detections),
         detections=detections,
         processing_time_ms=round((time.perf_counter() - started_at) * 1000, 2),
-        annotated_image=encode_image(annotated),
+        annotated_image=create_thumbnail(annotated, max_size=800, quality=90),
     )
     return response, annotated
 
