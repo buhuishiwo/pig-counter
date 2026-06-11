@@ -172,13 +172,8 @@ export default {
       }
       if (val && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated())
     },
-    batchImageIndex() { this._overrideBoxes = null; if (this.selectedBatchImage && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated()) },
-    selectedBatchResult(val) {
-      if (val && this.batchMode && !this.batchFullLoading) {
-        this._overrideBoxes = null
-        this.$nextTick(() => this.drawBoxesAnimated())
-      }
-    },
+    batchImageIndex() { this._overrideBoxes = null },
+    selectedBatchResult() {},
     batchFullLoading(val, oldVal) {
       if (oldVal && !val) this.$nextTick(() => this.drawBoxesInstant())
     }
