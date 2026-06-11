@@ -106,6 +106,7 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null, signal
   const response = await http.post('/predict-batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     signal,
+    timeout: Math.max(60000, files.length * 15000),
     onUploadProgress: e => {
       if (onProgress && e.total) {
         onProgress(Math.round((e.loaded / e.total) * 100))

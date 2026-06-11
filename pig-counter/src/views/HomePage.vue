@@ -412,9 +412,12 @@ export default {
           batchResults.value = { ...batchResults.value }
           if (res.annotated_image) { farmState._latestAnnotatedImage = res.annotated_image; store.commit('SET_RESULT', { ...(result.value || {}), annotatedImage: res.annotated_image }) }
         } else if (result.value) {
-          result.value.boxes = JSON.parse(JSON.stringify(editBoxes.value)); result.value.count = editBoxes.value.length
-          const idx = store.state.currentImageIndex; if (store.state.results[idx]) store.state.results[idx].count = editBoxes.value.length
-          if (res.annotated_image) { store.commit('SET_RESULT', { ...result.value, annotatedImage: res.annotated_image }); farmState._latestAnnotatedImage = res.annotated_image }
+          const newBoxes = JSON.parse(JSON.stringify(editBoxes.value))
+          const idx = store.state.currentImageIndex
+          if (store.state.results[idx]) { store.state.results[idx].boxes = newBoxes; store.state.results[idx].count = editBoxes.value.length; if (res.annotated_image) store.state.results[idx].annotatedImage = res.annotated_image }
+          const updated = { ...store.state.results[idx], boxes: newBoxes, count: editBoxes.value.length }
+          if (res.annotated_image) { updated.annotatedImage = res.annotated_image; farmState._latestAnnotatedImage = res.annotated_image }
+          store.commit('SET_RESULT', updated)
         }
         store.commit('ADD_LOG', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
         farmState.showNotify?.('success', '保存成功', `已更新 ${editBoxes.value.length} 个识别框`)

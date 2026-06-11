@@ -173,13 +173,15 @@ export default {
       if (val && !this.batchFullLoading) this.$nextTick(() => this.drawBoxesAnimated())
     },
     batchImageIndex() { this._overrideBoxes = null },
+    annotatedImage() {},
+    'result.boxes'(boxes) { if (!this.batchMode && boxes && this.hasResult) { this._overrideBoxes = null; this.$nextTick(() => this.drawBoxesAnimated()) } },
     selectedBatchResult() {},
     batchFullLoading(val, oldVal) {
       if (oldVal && !val) this.$nextTick(() => this.drawBoxesInstant())
     }
   },
   methods: {
-    onResultImgLoad() { if (this.batchFullLoading) return; this.drawBoxesInstant() },
+    onResultImgLoad() { if (this.batchFullLoading) return; this.drawBoxesAnimated() },
     drawBoxesAnimated(overrideBoxes) {
       if (overrideBoxes) this._overrideBoxes = overrideBoxes
       if (this._drawRafId) cancelAnimationFrame(this._drawRafId)
