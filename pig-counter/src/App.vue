@@ -140,9 +140,11 @@ export default {
     const previewImageSrc = computed(() => {
       if (previewType.value === 'original') return previewUrl.value
       if (previewFullImage.value) return previewFullImage.value
-      if (batch.batchResults.value && batch.selectedBatchImage.value) {
-        return batch.selectedBatchImage.value.url
-      }
+      // 有 recordId 时等 fetch 完再显示（loading 状态）
+      const recordId = batch.selectedBatchImage.value?.record_id || store.state.result?.recordId
+      if (recordId) return null
+      // 无 recordId 的兜底（理论上不走这里）
+      if (batch.batchResults.value && batch.selectedBatchImage.value) return null
       return annotatedImage.value
     })
     const selectedFarmId = computed({
@@ -219,8 +221,8 @@ export default {
       previewFullImage.value = null
       showImagePreview.value = true
       document.body.style.overflow = 'hidden'
-      if (type === 'annotated' && batch.batchResults.value && batch.selectedBatchImage.value) {
-        const recordId = batch.selectedBatchImage.value.record_id
+      if (type === 'annotated') {
+        const recordId = batch.selectedBatchImage.value?.record_id || store.state.result?.recordId
         if (recordId) {
           fetch(`/api/detection-records/${recordId}`)
             .then(r => r.json())

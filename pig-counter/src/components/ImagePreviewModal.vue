@@ -10,7 +10,11 @@
           </svg>
         </button>
         <div class="preview-content">
-          <img :src="annotatedImage" class="preview-image" alt="识别结果大图" />
+          <div v-if="!annotatedImage" class="preview-loading">
+            <div class="preview-spinner"></div>
+            <span>加载高清图中…</span>
+          </div>
+          <img v-else :src="annotatedImage" class="preview-image" alt="识别结果大图" />
           <div v-if="showInfo" class="preview-info">
             <span class="preview-badge">检测到 {{ pigCount }} 头猪</span>
             <span class="preview-badge">置信度 {{ confidencePct }}%</span>
@@ -101,6 +105,29 @@ export default {
   max-height: calc(90vh - 80px);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5)
+}
+
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 60px 40px;
+  color: #666;
+  font-size: 14px
+}
+
+.preview-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e5e5e5;
+  border-top-color: #333;
+  border-radius: 50%;
+  animation: preview-spin 0.8s linear infinite
+}
+
+@keyframes preview-spin {
+  to { transform: rotate(360deg) }
 }
 
 .preview-info {
