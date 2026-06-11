@@ -528,7 +528,7 @@ export default {
       hasImage, hasResult, previewUrl, imageMeta, isAnalyzing, uploadProgress,
       result, pigCount, confidencePct, inferenceTime, annotatedImage,
       confClass, activeResult, statCards, systemStats,
-      batchTree, batchResults, batchProcessing, batchImageIndex,
+      batchTree, batchResults, batchProcessing, batchFullLoading, batchImageIndex,
       showFolderTree, batchAnnotatedImages, selectedBatchImage, selectedBatchResult,
       onBatchFolderChange: farmState.onBatchFolderChange, runBatchAnalysis: farmState.runBatchAnalysis,
       downloadBatchExcel: farmState.downloadBatchExcel, clearBatch: farmState.clearBatch,
