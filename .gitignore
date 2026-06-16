@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+dist/
+
+# Cache
+.cache/
+node_modules/.cache/
+.eslintcache
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Playwright MCP
+.playwright-mcp/
