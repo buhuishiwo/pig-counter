@@ -53,6 +53,44 @@ export function getImageDimensions(dataURL) {
 }
 
 /**
+ * 竖屏图片自动旋转为横屏（逆时针 90°）
+ * 模型训练数据为横屏，竖屏直接送检精度低；旋转后复用横屏逻辑，精度恢复。
+ * @param {File} file - 原始图片 File 对象
+ * @returns {Promise<File>} - 横屏 File 对象（竖屏时旋转，横屏时原样返回）
+ */
+export async function ensureLandscape(file) {
+  const dataURL = await fileToDataURL(file)
+  const { width, height } = await getImageDimensions(dataURL)
+
+  // 横屏或正方形，直接返回原文件
+  if (width >= height) return file
+
+  // 竖屏：逆时针旋转 90°
+  const img = await loadImage(dataURL)
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalHeight
+  canvas.height = img.naturalWidth
+  const ctx = canvas.getContext('2d')
+  ctx.translate(0, canvas.height)
+  ctx.rotate(-Math.PI / 2)
+  ctx.drawImage(img, 0, 0)
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas 导出失败')), 'image/jpeg', 0.92)
+  })
+  return new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() })
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('图片加载失败'))
+    img.src = src
+  })
+}
+
+/**
  * 格式化文件大小
  * @param {number} bytes
  * @returns {string}

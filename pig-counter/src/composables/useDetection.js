@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { useStore } from 'vuex'
 import { analyzeImage } from '@/api/pigModel'
-import { validateImage, fileToDataURL, getImageDimensions, formatFileSize } from '@/utils/imageUtils'
+import { validateImage, fileToDataURL, getImageDimensions, formatFileSize, ensureLandscape } from '@/utils/imageUtils'
 
 export function useDetection({ showNotify, showToastWithProgress, updateToastProgress, closeNotify, loadDetectionStats, clearBatch, batchTree }) {
   const store = useStore()
@@ -20,15 +20,18 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     }
     const previewUrls = []
     const metas = []
+    const processedFiles = []
     for (const file of files) {
-      const dataURL = await fileToDataURL(file)
+      const rotated = await ensureLandscape(file)
+      processedFiles.push(rotated)
+      const dataURL = await fileToDataURL(rotated)
       const dim = await getImageDimensions(dataURL)
-      const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
+      const meta = { name: rotated.name, size: formatFileSize(rotated.size), width: dim.width, height: dim.height }
       previewUrls.push(dataURL)
       metas.push(meta)
-      store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+      store.commit('ADD_LOG', { msg: '已加载：' + rotated.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）' + (rotated !== file ? ' [竖屏已旋转]' : ''), type: 'info' })
     }
-    store.commit('SET_IMAGES', { files, previewUrls, metas })
+    store.commit('SET_IMAGES', { files: processedFiles, previewUrls, metas })
   }
 
   async function processFile(file) {
@@ -37,11 +40,12 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
       store.commit('ADD_LOG', { msg: error, type: 'error' })
       return
     }
-    const dataURL = await fileToDataURL(file)
+    const rotated = await ensureLandscape(file)
+    const dataURL = await fileToDataURL(rotated)
     const dim = await getImageDimensions(dataURL)
-    const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
-    store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta })
-    store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+    const meta = { name: rotated.name, size: formatFileSize(rotated.size), width: dim.width, height: dim.height }
+    store.commit('SET_IMAGE', { file: rotated, previewUrl: dataURL, meta })
+    store.commit('ADD_LOG', { msg: '已加载：' + rotated.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）' + (rotated !== file ? ' [竖屏已旋转]' : ''), type: 'info' })
   }
 
   function clearImage() {
