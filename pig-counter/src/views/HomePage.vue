@@ -266,18 +266,20 @@ export default {
         const canvas = editCanvas.value
         const img = editImg.value
         if (!canvas || !img || !img.naturalWidth) return
-        const containerW = img.clientWidth, containerH = img.clientHeight
+        const area = canvas.parentElement
+        const containerW = area.clientWidth, containerH = area.clientHeight
         const natW = img.naturalWidth, natH = img.naturalHeight
         const scale = Math.min(containerW / natW, containerH / natH)
         const renderW = Math.round(natW * scale), renderH = Math.round(natH * scale)
+        const offsetX = Math.round((containerW - renderW) / 2)
+        const offsetY = Math.round((containerH - renderH) / 2)
         canvas.width = renderW; canvas.height = renderH
         canvas.style.width = renderW + 'px'; canvas.style.height = renderH + 'px'
-        canvas.style.left = Math.round((containerW - renderW) / 2) + 'px'
-        canvas.style.top = Math.round((containerH - renderH) / 2) + 'px'
+        canvas.style.left = offsetX + 'px'; canvas.style.top = offsetY + 'px'
         img.style.setProperty('width', renderW + 'px', 'important')
         img.style.setProperty('height', renderH + 'px', 'important')
-        img.style.setProperty('left', Math.round((containerW - renderW) / 2) + 'px', 'important')
-        img.style.setProperty('top', Math.round((containerH - renderH) / 2) + 'px', 'important')
+        img.style.setProperty('left', offsetX + 'px', 'important')
+        img.style.setProperty('top', offsetY + 'px', 'important')
         img.style.setProperty('object-fit', 'fill', 'important')
         drawEditCanvas()
       })

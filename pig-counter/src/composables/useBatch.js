@@ -1,6 +1,5 @@
 import { ref, computed } from 'vue'
 import { useStore } from 'vuex'
-import { ensureLandscape } from '@/utils/imageUtils'
 
 export function useBatch({ showNotify, showToastWithProgress, updateToastProgress, closeNotify }) {
   const store = useStore()
@@ -53,7 +52,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     return { boxes: img.boxes, count: img.pig_count }
   })
 
-  async function onBatchFolderChange(e) {
+  function onBatchFolderChange(e) {
     const raw = Array.from(e.target?.files || e || [])
     if (!raw.length) return
     const files = raw.map(item => {
@@ -63,7 +62,6 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     const tree = { batchName: '', units: {}, totalFiles: 0, unitCount: 0 }
     const newBatchFiles = []
     const newBatchPaths = []
-    let rotatedCount = 0
     for (const { file, path } of files) {
       const normPath = path.replace(/\\/g, '/')
       const parts = normPath.split('/').filter(Boolean)
@@ -77,9 +75,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       if (!tree.units[unitName]) tree.units[unitName] = []
       tree.units[unitName].push(fileName)
       tree.totalFiles++
-      const rotated = await ensureLandscape(file)
-      if (rotated !== file) rotatedCount++
-      newBatchFiles.push(rotated)
+      newBatchFiles.push(file)
       newBatchPaths.push(normPath)
     }
     tree.unitCount = Object.keys(tree.units).length
@@ -88,8 +84,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     batchTree.value = tree
     batchResults.value = null
     store.commit('CLEAR_IMAGE')
-    const rotateMsg = rotatedCount > 0 ? `，${rotatedCount} 张竖屏已旋转` : ''
-    store.commit('ADD_LOG', { msg: `已加载文件夹: ${tree.batchName}（${tree.totalFiles} 张${rotateMsg}，${tree.unitCount} 单元）`, type: 'info' })
+    store.commit('ADD_LOG', { msg: `已加载文件夹: ${tree.batchName}（${tree.totalFiles} 张，${tree.unitCount} 单元）`, type: 'info' })
     if (e.target) e.target.value = ''
   }
 
