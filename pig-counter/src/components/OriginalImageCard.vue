@@ -4,6 +4,29 @@
       <div class="img-card-header-left">
         <span class="traffic-dot dot-yellow"></span>
         <span class="img-card-title">原图</span>
+        <a-popover trigger="hover" placement="bottomLeft" overlay-class-name="photo-guide-popover" class="photo-guide-popover-wrap">
+          <template #content>
+            <div class="photo-guide">
+              <div class="photo-guide-title">拍照规范</div>
+              <div class="photo-guide-sub">请按以下方式拍摄，确保识别准确</div>
+              <div class="photo-guide-list">
+                <div class="photo-guide-item">
+                  <img src="/guide-landscape.png" class="photo-guide-img" alt="横屏示例" />
+                  <div class="photo-guide-label">横屏</div>
+                </div>
+                <div class="photo-guide-item">
+                  <img src="/guide-portrait.jpg" class="photo-guide-img" alt="竖屏示例" />
+                  <div class="photo-guide-label">竖屏</div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <span class="photo-guide-trigger">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+            </svg>
+          </span>
+        </a-popover>
       </div>
       <div class="img-card-header-right">
         <transition name="meta-slide">
@@ -63,10 +86,12 @@
 
 <script>
 import { PiggyBank } from '@lucide/vue'
+import { Popover } from 'ant-design-vue'
+import 'ant-design-vue/es/popover/style'
 
 export default {
   name: 'OriginalImageCard',
-  components: { PiggyBank },
+  components: { PiggyBank, APopover: Popover },
   props: {
     hasImage: { type: Boolean, default: false },
     previewUrl: { type: String, default: '' },
@@ -400,4 +425,55 @@ export default {
   from { opacity: 0 }
   to { opacity: 1 }
 }
+
+.photo-guide-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #c7c7cc;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+  margin-left: -2px
+}
+
+.photo-guide-trigger:hover {
+  color: var(--accent);
+  background: rgba(0, 122, 255, 0.08)
+}
+
+.photo-guide-popover-wrap {
+  margin-left: -8px;
+  margin-top: 2px
+}
+</style>
+
+<style>
+.photo-guide-popover .ant-popover-inner { padding: 0 !important }
+.photo-guide { padding: 16px 18px; width: 340px }
+.photo-guide-title { font-size: 14px; font-weight: 600; color: #1d1d1f; margin-bottom: 4px }
+.photo-guide-sub { font-size: 12px; color: #86868b; margin-bottom: 14px }
+.photo-guide-list { display: flex; gap: 14px }
+.photo-guide-item { flex: 1; text-align: center }
+.photo-guide-img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e5e5ea;
+  background: #f5f5f7;
+  margin-bottom: 8px;
+  display: block
+}
+.photo-guide-item:last-child .photo-guide-img {
+  aspect-ratio: 3 / 4;
+  width: 56%;
+  display: block;
+  margin-left: auto;
+  margin-right: auto
+}
+.photo-guide-label { font-size: 12px; color: #636366; font-weight: 500 }
 </style>
