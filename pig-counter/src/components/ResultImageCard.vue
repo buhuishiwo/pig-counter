@@ -13,8 +13,6 @@
           </span>
         </template>
         <template v-else-if="batchMode">
-          <span class="img-card-chip">{{ batchTotalPhotos }} 张</span>
-          <span class="img-card-chip">{{ batchUnitCount }} 单元</span>
           <span class="img-card-chip chip-green" v-if="batchTotalPigs">共 {{ batchTotalPigs }} 头猪</span>
         </template>
         <template v-else>
