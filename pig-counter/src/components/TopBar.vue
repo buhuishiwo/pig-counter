@@ -102,10 +102,6 @@
         </router-link>
       </div>
     </div>
-    <div class="topbar-scan" v-if="isAnalyzing">
-      <div class="topbar-scan-fill" :style="{ width: uploadProgress + '%' }"></div>
-      <div class="topbar-scan-glow" :style="{ left: uploadProgress + '%' }"></div>
-    </div>
   </nav>
 </template>
 
@@ -236,31 +232,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px
-}
-
-.topbar-scan {
-  height: 2px;
-  background: var(--sep);
-  position: relative;
-  overflow: visible
-}
-
-.topbar-scan-fill {
-  height: 100%;
-  background: var(--blue);
-  transition: width 0.3s ease;
-  border-radius: 1px
-}
-
-.topbar-scan-glow {
-  position: absolute;
-  top: -3px;
-  width: 24px;
-  height: 8px;
-  background: radial-gradient(circle, var(--blue), transparent);
-  transform: translateX(-50%);
-  transition: left 0.3s ease;
-  filter: blur(3px)
 }
 
 .btn-disabled {

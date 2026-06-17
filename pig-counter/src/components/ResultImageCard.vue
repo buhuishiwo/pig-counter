@@ -44,18 +44,10 @@
     <div class="img-card-body">
       <div class="result-zone" :class="{ 'result-zone--active': hasResult || (batchMode && selectedBatchImage), 'result-zone--fill': batchMode }">
         <!-- 批量模式：扫描中 -->
-        <div v-if="batchMode && batchProcessing"
-          class="result-overlay result-overlay--batch-scanning">
-          <div class="scan-line"></div>
-          <div class="scan-corners">
-            <span class="sc sc-tl"></span>
-            <span class="sc sc-tr"></span>
-            <span class="sc sc-bl"></span>
-            <span class="sc sc-br"></span>
-          </div>
-          <div class="scan-label">
-            <div class="scan-spinner"></div>
-            AI 批量扫描中…
+        <div v-if="batchMode && batchProcessing" class="result-overlay result-overlay--scanning">
+          <div class="overlay-content">
+            <a-progress type="circle" :percent="uploadProgress" :size="80" :strokeColor="{ '0%': '#007aff', '100%': '#34c759' }" />
+            <span style="margin-top:10px;font-size:13px;color:#636366">AI 批量扫描中…</span>
           </div>
         </div>
         <!-- 批量模式：检测完成后显示标注图 -->
@@ -90,16 +82,9 @@
           </transition>
           <transition name="overlay-fade">
             <div class="result-overlay result-overlay--scanning" v-if="isAnalyzing">
-              <div class="scan-line"></div>
-              <div class="scan-corners">
-                <span class="sc sc-tl"></span>
-                <span class="sc sc-tr"></span>
-                <span class="sc sc-bl"></span>
-                <span class="sc sc-br"></span>
-              </div>
-              <div class="scan-label">
-                <div class="scan-spinner"></div>
-                AI 扫描中…
+              <div class="overlay-content">
+                <a-progress type="circle" :percent="uploadProgress" :size="80" :strokeColor="{ '0%': '#007aff', '100%': '#34c759' }" />
+                <span style="margin-top:10px;font-size:13px;color:#636366">AI 扫描中…</span>
               </div>
             </div>
           </transition>
@@ -128,8 +113,12 @@
 </template>
 
 <script>
+import { Progress } from 'ant-design-vue'
+import 'ant-design-vue/es/progress/style'
+
 export default {
   name: 'ResultImageCard',
+  components: { AProgress: Progress },
   props: {
     hasImage: { type: Boolean, default: false },
     hasResult: { type: Boolean, default: false },
@@ -147,6 +136,7 @@ export default {
     currentImageIndex: { type: Number, default: 0 },
     batchMode: { type: Boolean, default: false },
     batchProcessing: { type: Boolean, default: false },
+    uploadProgress: { type: Number, default: 0 },
     batchTotalPigs: { type: Number, default: 0 },
     batchTotalPhotos: { type: Number, default: 0 },
     batchUnitCount: { type: Number, default: 0 },
@@ -471,17 +461,6 @@ export default {
   border-radius: var(--r-md)
 }
 
-.result-overlay--batch-scanning {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px);
-  border-radius: var(--r-md)
-}
-
 .overlay-content {
   display: flex;
   flex-direction: column;
@@ -504,48 +483,6 @@ export default {
 }
 
 .result-placeholder { opacity: 0.35 }
-
-.scan-line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--green), transparent);
-  box-shadow: 0 0 12px var(--green);
-  animation: scanLine 1.8s ease-in-out infinite
-}
-
-@keyframes scanLine { 0% { top: 0% } 100% { top: 100% } }
-
-.scan-corners { position: absolute; inset: 12px }
-.sc { position: absolute; width: 16px; height: 16px; border-color: var(--green); border-style: solid }
-.sc-tl { top: 0; left: 0; border-width: 2px 0 0 2px; border-radius: 3px 0 0 0 }
-.sc-tr { top: 0; right: 0; border-width: 2px 2px 0 0; border-radius: 0 3px 0 0 }
-.sc-bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; border-radius: 0 0 0 3px }
-.sc-br { bottom: 0; right: 0; border-width: 0 2px 2px 0; border-radius: 0 0 3px 0 }
-
-.scan-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--green);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-shadow: 0 0 8px rgba(52, 199, 89, 0.5)
-}
-
-.scan-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(52, 199, 89, 0.3);
-  border-top-color: var(--green);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite
-}
-
-@keyframes spin { to { transform: rotate(360deg) } }
 
 .canvas-wrap--clickable { cursor: pointer }
 .canvas-wrap--clickable:hover { box-shadow: 0 0 0 3px rgba(30, 190, 110, 0.3); border-radius: 8px }

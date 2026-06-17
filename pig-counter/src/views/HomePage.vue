@@ -35,6 +35,7 @@
         :confClass="confClass" :pigCount="pigCount" :resultsCount="$store.state.results.length"
         :currentImageIndex="$store.state.currentImageIndex" :batchMode="!!batchTree"
         :batchProcessing="batchProcessing" :batchFullLoading="batchFullLoading" :batchTotalPigs="batchResults?.total_pigs"
+        :uploadProgress="uploadProgress"
         :batchTotalPhotos="batchResults?.total_photos" :batchUnitCount="batchResults?.units?.length"
         :batchAnnotatedImages="batchAnnotatedImages" :selectedBatchImage="selectedBatchImage"
         :selectedBatchResult="selectedBatchResult" :batchImageIndex="batchImageIndex"
