@@ -80,21 +80,50 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     store.commit('SET_PROGRESS', 0)
     _abortCtrl.value = new AbortController()
 
+    let uploadDone = false
+    let simTimer = null
+    function startSimProgress(from) {
+      let pct = from
+      simTimer = setInterval(() => {
+        pct = pct + (100 - pct) * 0.025
+        if (pct > 97) pct = 97
+        store.commit('SET_PROGRESS', Math.round(pct))
+        updateToastProgress(Math.round(pct))
+      }, 200)
+    }
+    function stopSimProgress() {
+      if (simTimer) { clearInterval(simTimer); simTimer = null }
+    }
+
     const imageFiles = store.state.imageFiles.length > 0 ? store.state.imageFiles : [store.state.imageFile]
     store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
     showToastWithProgress('正在识别图片...', 'toast-info')
 
     try {
       const result = await analyzeImage(imageFiles, (p) => {
-        store.commit('SET_PROGRESS', p)
-        updateToastProgress(p)
+        const mapped = Math.round(p * 0.5)
+        store.commit('SET_PROGRESS', mapped)
+        updateToastProgress(mapped)
+        if (p >= 100 && !uploadDone) {
+          uploadDone = true
+          startSimProgress(50)
+        }
       }, selectedFarmId, _abortCtrl.value.signal)
+
+      stopSimProgress()
+      await new Promise(r => {
+        let cur = store.state.uploadProgress
+        const tick = setInterval(() => {
+          cur = Math.min(cur + Math.max(2, (100 - cur) * 0.15), 100)
+          store.commit('SET_PROGRESS', Math.round(cur))
+          updateToastProgress(Math.round(cur))
+          if (cur >= 100) { clearInterval(tick); setTimeout(r, 400) }
+        }, 50)
+      })
 
       if (result.totalImages) {
         store.commit('SET_RESULTS', { results: result.results, totalPigs: result.totalPigs })
         if (!window.__modelOriginalCount) window.__modelOriginalCount = result.totalPigs
-        store.commit('SET_PROGRESS', 100)
-        updateToastProgress(100)
         setTimeout(() => {
           showNotify('success', '识别完成', `${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`)
         }, 500)
@@ -102,8 +131,6 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
       } else {
         store.commit('SET_RESULT', result)
         if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
-        store.commit('SET_PROGRESS', 100)
-        updateToastProgress(100)
         setTimeout(() => {
           showNotify('success', '识别完成', `检测到 ${result.count} 头猪`)
         }, 500)
@@ -112,6 +139,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
       }
       await loadDetectionStats()
     } catch (err) {
+      stopSimProgress()
       const isCancel = err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED' || (err.message && err.message.toLowerCase().includes('cancel'))
       if (isCancel) {
         store.commit('ADD_LOG', { msg: '识别已取消', type: 'info' })
@@ -120,6 +148,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
         showNotify('error', '识别失败', err.message)
       }
     } finally {
+      stopSimProgress()
       _abortCtrl.value = null
       store.commit('SET_ANALYZING', false)
       closeNotify()
