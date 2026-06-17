@@ -99,11 +99,12 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     const abortCtrl = new AbortController()
     _batchAbortCtrl.value = abortCtrl
     let simTimer = null
-    function startSimProgress(from) {
-      let pct = from
+    function startSimProgress() {
+      let ticks = 0
       simTimer = setInterval(() => {
-        pct = pct + (100 - pct) * 0.025
-        if (pct > 97) pct = 97
+        ticks++
+        const t = ticks * 0.2
+        const pct = Math.min(99, 50 + 49 * (1 - Math.exp(-t / 15)))
         const v = Math.round(pct)
         store.commit('SET_PROGRESS', v)
         updateToastProgress(v)
@@ -132,7 +133,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
           }
         }
         xhr.upload.onload = () => {
-          startSimProgress(50)
+          startSimProgress()
         }
         xhr.onload = () => {
           resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => JSON.parse(xhr.responseText) })

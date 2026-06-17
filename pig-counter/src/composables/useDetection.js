@@ -82,11 +82,12 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
 
     let uploadDone = false
     let simTimer = null
-    function startSimProgress(from) {
-      let pct = from
+    function startSimProgress() {
+      let ticks = 0
       simTimer = setInterval(() => {
-        pct = pct + (100 - pct) * 0.025
-        if (pct > 97) pct = 97
+        ticks++
+        const t = ticks * 0.2
+        const pct = Math.min(99, 50 + 49 * (1 - Math.exp(-t / 15)))
         store.commit('SET_PROGRESS', Math.round(pct))
         updateToastProgress(Math.round(pct))
       }, 200)
@@ -101,12 +102,13 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
 
     try {
       const result = await analyzeImage(imageFiles, (p) => {
-        const mapped = Math.round(p * 0.5)
-        store.commit('SET_PROGRESS', mapped)
-        updateToastProgress(mapped)
+        if (!uploadDone) {
+          store.commit('SET_PROGRESS', Math.round(p * 0.5))
+          updateToastProgress(Math.round(p * 0.5))
+        }
         if (p >= 100 && !uploadDone) {
           uploadDone = true
-          startSimProgress(50)
+          startSimProgress()
         }
       }, selectedFarmId, _abortCtrl.value.signal)
 
