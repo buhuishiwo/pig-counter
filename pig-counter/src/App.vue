@@ -11,6 +11,7 @@
       :hasResult="hasResult"
       :hasImage="hasImage"
       :batchTree="batchTree"
+      :batchResults="batchResults"
       :selectedFarmId="selectedFarmId"
       :serviceOnline="$store.state.serviceOnline"
       :farmName="currentFarmName"
@@ -34,6 +35,7 @@
       :hasResult="hasResult"
       :hasImage="hasImage"
       :batchTree="batchTree"
+      :batchResults="batchResults"
       :selectedFarmId="selectedFarmId"
       :serviceOnline="$store.state.serviceOnline"
       :farmName="currentFarmName"
@@ -292,7 +294,7 @@ export default {
       onFarmAdded: farm.onFarmAdded, onFarmUpdated: farm.onFarmUpdated, onFarmDeleted: farm.onFarmDeleted,
       onServiceOnline: farm.onServiceOnline, toggleFarmDropdown: farm.toggleFarmDropdown, selectFarmWrapper,
       selectedFarmId, hasImage, hasResult, isAnalyzing, uploadProgress,
-      currentFarmName, batchTree: batch.batchTree,
+      currentFarmName, batchTree: batch.batchTree, batchResults: batch.batchResults,
       onTopFileChange, onBatchFolderChange: batch.onBatchFolderChange, clearImage: detection.clearImage,
       triggerWarningFlash, handleAnalyzeWrapper,
       previewImageSrc,

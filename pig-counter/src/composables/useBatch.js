@@ -98,6 +98,20 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     store.commit('SET_PROGRESS', 0)
     const abortCtrl = new AbortController()
     _batchAbortCtrl.value = abortCtrl
+    let simTimer = null
+    function startSimProgress(from) {
+      let pct = from
+      simTimer = setInterval(() => {
+        pct = pct + (100 - pct) * 0.025
+        if (pct > 97) pct = 97
+        const v = Math.round(pct)
+        store.commit('SET_PROGRESS', v)
+        updateToastProgress(v)
+      }, 200)
+    }
+    function stopSimProgress() {
+      if (simTimer) { clearInterval(simTimer); simTimer = null }
+    }
     showToastWithProgress('批次检测中…')
     try {
       const formData = new FormData()
@@ -112,14 +126,15 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         xhr.open('POST', '/api/batch/upload')
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 90)
+            const pct = Math.round((e.loaded / e.total) * 50)
             store.commit('SET_PROGRESS', pct)
             updateToastProgress(pct)
           }
         }
+        xhr.upload.onload = () => {
+          startSimProgress(50)
+        }
         xhr.onload = () => {
-          store.commit('SET_PROGRESS', 95)
-          updateToastProgress(95)
           resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => JSON.parse(xhr.responseText) })
         }
         xhr.onerror = () => reject(new Error('网络错误'))
@@ -132,11 +147,21 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       }
       batchFullLoading.value = true
       batchResults.value = await resp.json()
-      updateToastProgress(100)
+      stopSimProgress()
+      await new Promise(r => {
+        let cur = store.state.uploadProgress
+        const tick = setInterval(() => {
+          cur = Math.min(cur + Math.max(2, (100 - cur) * 0.15), 100)
+          store.commit('SET_PROGRESS', Math.round(cur))
+          updateToastProgress(Math.round(cur))
+          if (cur >= 100) { clearInterval(tick); setTimeout(r, 400) }
+        }, 50)
+      })
       closeNotify()
       store.commit('ADD_LOG', { msg: `批次检测完成: ${batchResults.value.total_pigs} 头猪`, type: 'info' })
       loadBatchFullImages()
     } catch (e) {
+      stopSimProgress()
       if (e.name === 'AbortError') {
         closeNotify()
         store.commit('ADD_LOG', { msg: '批量检测已取消', type: 'info' })
@@ -150,6 +175,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         store.commit('ADD_LOG', { msg: '批次检测失败: ' + e.message, type: 'error' })
       }
     } finally {
+      stopSimProgress()
       _batchAbortCtrl.value = null
       batchProcessing.value = false
       store.commit('SET_ANALYZING', false)

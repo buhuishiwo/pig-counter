@@ -58,7 +58,7 @@
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          {{ isAnalyzing ? '识别中…' : hasResult ? '重新识别' : '开始识别' }}
+          {{ isAnalyzing ? '识别中…' : (hasResult || batchResults) ? '重新识别' : '开始识别' }}
         </button>
 
         <router-link v-if="routePath === '/'" to="/stats" class="capsule-btn-ghost">
@@ -94,6 +94,7 @@ export default {
     hasResult: { type: Boolean, default: false },
     hasImage: { type: Boolean, default: false },
     batchTree: { type: Object, default: null },
+    batchResults: { type: Object, default: null },
     selectedFarmId: { type: [Number, null], default: null },
     serviceOnline: { type: Boolean, default: false },
     farmName: { type: String, default: '未选择' },
