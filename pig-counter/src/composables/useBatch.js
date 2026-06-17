@@ -12,6 +12,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   const batchFullLoading = ref(false)
   const batchImageIndex = ref(0)
   const showFolderTree = ref(false)
+  const _batchAbortCtrl = ref(null)
 
   const batchAnnotatedImages = computed(() => {
     if (!batchResults.value?.units) return []
@@ -96,6 +97,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     store.commit('SET_ANALYZING', true)
     store.commit('SET_PROGRESS', 0)
     const abortCtrl = new AbortController()
+    _batchAbortCtrl.value = abortCtrl
     showToastWithProgress('批次检测中…')
     try {
       const formData = new FormData()
@@ -148,6 +150,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         store.commit('ADD_LOG', { msg: '批次检测失败: ' + e.message, type: 'error' })
       }
     } finally {
+      _batchAbortCtrl.value = null
       batchProcessing.value = false
       store.commit('SET_ANALYZING', false)
     }
@@ -160,8 +163,9 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       for (const unit of batchResults.value.units) {
         for (const pen of unit.pens) {
           if (!pen.record_id || pen.annotated_image) continue
+          if (_batchAbortCtrl.value?.signal.aborted) return
           try {
-            const res = await fetch(`/api/detection-records/${pen.record_id}`)
+            const res = await fetch(`/api/detection-records/${pen.record_id}`, { signal: _batchAbortCtrl.value?.signal })
             if (!res.ok) continue
             const data = await res.json()
             if (data.annotated_image) { pen.annotated_image = data.annotated_image; updated = true }
@@ -201,6 +205,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   }
 
   function clearBatch() {
+    if (_batchAbortCtrl.value) { _batchAbortCtrl.value.abort(); _batchAbortCtrl.value = null }
     batchFiles.value = []
     batchPaths.value = []
     batchTree.value = null
