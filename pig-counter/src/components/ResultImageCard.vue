@@ -65,6 +65,15 @@
             @load="onResultImgLoad" />
           <canvas ref="boxCanvas" class="box-canvas"></canvas>
         </div>
+        <!-- 批量模式：已加载但未开始识别 -->
+        <div v-else-if="batchMode" class="canvas-wrap">
+          <div class="result-overlay">
+            <div class="overlay-content">
+              <div class="overlay-icon">✦</div>
+              <span>点击「开始识别」分析图片</span>
+            </div>
+          </div>
+        </div>
         <!-- 单图模式：有图片时 -->
         <div v-else-if="hasImage" class="canvas-wrap" @click="$emit('open-preview')"
           :class="{ 'canvas-wrap--clickable': hasResult }">
