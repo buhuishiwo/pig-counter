@@ -28,3 +28,6 @@ Thumbs.db
 
 # Playwright MCP
 .playwright-mcp/
+
+# 本地飞轮文档（仅本地维护，不提交到仓库）
+docs/wheel/
