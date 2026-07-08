@@ -237,7 +237,6 @@ export default {
         recordId = result.value.recordId || null
         imageUrl = previewUrl.value
       } else { return }
-      if (!boxes.length) return
       editBoxes.value = JSON.parse(JSON.stringify(boxes))
       _editInitialBoxCount.value = boxes.length
       editRecordId.value = recordId

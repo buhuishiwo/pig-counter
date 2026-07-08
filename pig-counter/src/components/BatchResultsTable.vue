@@ -48,8 +48,13 @@
           </div>
           <div class="batch-stat-sep"></div>
           <div class="batch-stat-item">
+            <span class="batch-stat-num">{{ totalWatermark }}</span>
+            <span class="batch-stat-label">水印总数</span>
+          </div>
+          <div class="batch-stat-sep"></div>
+          <div class="batch-stat-item">
             <span class="batch-stat-num batch-stat-num--green">{{ batchResults.total_pigs }}</span>
-            <span class="batch-stat-label">头猪</span>
+            <span class="batch-stat-label">标注总数</span>
           </div>
         </div>
         <div class="batch-unit-list">
@@ -83,7 +88,7 @@
             <td></td>
             <td v-if="pi === 0" :rowspan="unit.pens.length">{{ unit.unit_name }}</td>
             <td v-if="pi > 0" style="display:none"></td>
-            <td>{{ pen.pen_name }}</td>
+            <td>{{ pen.pen_number }}</td>
             <td class="batch-num">{{ pen.watermark_count != null ? pen.watermark_count : 'N/A' }}</td>
             <td class="batch-num">{{ pen.pig_count }}</td>
             <td class="batch-num" :class="{ 'diff-negative': pen.watermark_count != null && pen.watermark_count - pen.pig_count < 0 }">
@@ -92,16 +97,23 @@
           </tr>
           <tr class="subtotal-row">
             <td></td>
-            <td colspan="4">{{ unit.unit_name }} 小计</td>
+            <td colspan="2">{{ unit.unit_name }} 小计</td>
+            <td class="batch-num">{{ unit.pens.reduce((s, p) => s + (p.watermark_count || 0), 0) }}</td>
             <td class="batch-num">{{ unit.subtotal }}</td>
+            <td class="batch-num" :class="{ 'diff-negative': unit.pens.reduce((s, p) => s + ((p.watermark_count || 0) - p.pig_count), 0) < 0 }">
+              {{ unit.pens.reduce((s, p) => s + ((p.watermark_count || 0) - p.pig_count), 0) }}
+            </td>
           </tr>
         </tbody>
       </table>
       <div class="batch-total-bar">
         <span></span>
         <span>合计（{{ batchResults.units.length }} 单元，{{ batchResults.total_photos }} 张）</span>
-        <span></span>
+        <span class="batch-num">{{ totalWatermark }}</span>
         <span class="batch-num">{{ batchResults.total_pigs }}</span>
+        <span class="batch-num" :class="{ 'diff-negative': totalWatermark - batchResults.total_pigs < 0 }">
+          {{ totalWatermark - batchResults.total_pigs }}
+        </span>
       </div>
     </div>
 
@@ -123,6 +135,11 @@ export default {
     maxSubtotal() {
       if (!this.batchResults || !this.batchResults.units) return 1
       return Math.max(...this.batchResults.units.map(u => u.subtotal), 1)
+    },
+    totalWatermark() {
+      if (!this.batchResults || !this.batchResults.units) return 0
+      return this.batchResults.units.reduce((sum, u) =>
+        sum + u.pens.reduce((s, p) => s + (p.watermark_count || 0), 0), 0)
     }
   },
   methods: {
