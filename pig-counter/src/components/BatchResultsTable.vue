@@ -74,7 +74,7 @@
       <table class="batch-table">
         <thead>
           <tr>
-            <th>{{ batchResults.batch_name }}</th>
+            <th>{{ ocrBuilding }}</th>
             <th>单元</th>
             <th>栏舍</th>
             <th>水印数量</th>
@@ -88,7 +88,7 @@
             <td></td>
             <td v-if="pi === 0" :rowspan="unit.pens.length">{{ unit.unit_name }}</td>
             <td v-if="pi > 0" style="display:none"></td>
-            <td>{{ pen.pen_number }}</td>
+            <td>{{ pen.pen_number }}号栏</td>
             <td class="batch-num">{{ pen.watermark_count != null ? pen.watermark_count : 'N/A' }}</td>
             <td class="batch-num">{{ pen.pig_count }}</td>
             <td class="batch-num" :class="{ 'diff-negative': pen.watermark_count != null && pen.watermark_count - pen.pig_count < 0 }">
@@ -140,6 +140,12 @@ export default {
       if (!this.batchResults || !this.batchResults.units) return 0
       return this.batchResults.units.reduce((sum, u) =>
         sum + u.pens.reduce((s, p) => s + (p.watermark_count || 0), 0), 0)
+    },
+    ocrBuilding() {
+      const units = this.batchResults?.units
+      if (!units?.length) return this.batchResults?.batch_name || ''
+      const wm = units[0]?.pens?.[0]?.watermark
+      return wm?.building || this.batchResults.batch_name || ''
     }
   },
   methods: {
