@@ -379,6 +379,8 @@ export default {
 /* ── 详情表格 ── */
 .batch-table-wrap {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   max-height: 480px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -401,6 +403,7 @@ export default {
   font-weight: 700;
   font-size: 13px;
   color: var(--text);
+  margin-top: auto;
   position: sticky;
   bottom: 0;
   z-index: 2;
