@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from watermark_ocr import recognize_watermarks_batch
 
 SERVICE_DIR = Path(__file__).resolve().parent
 
@@ -477,9 +478,27 @@ async def save_detection_record(
         return None
 
 
-# ============================================================
-# OCR 标记识别 API
-# ============================================================
+async def save_watermark_data(
+    record_id: int,
+    wm: dict,
+) -> None:
+    """保存水印识别结果到 watermark_data 表。"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO watermark_data
+                        (detection_record_id, capture_time, location, building, unit_name, pen_number, count, storage_unit, raw_text)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (record_id, wm.get("time"), wm.get("location"),
+                     wm.get("building"), wm.get("unit_name"),
+                     wm.get("pen_number"), wm.get("count"),
+                     wm.get("storage_unit"), wm.get("raw_text"))
+                )
+                conn.commit()
+    except Exception as exc:
+        print(f"保存水印数据失败: {exc}")
+
 
 # ============================================================
 # 猪场管理API
@@ -1297,81 +1316,99 @@ class BatchUploadResponse(BaseModel):
 @app.post("/api/batch/upload")
 async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None), file_paths: list[str] = Form(default=[])) -> dict:
     """
-    接收带路径的多文件（前端 webkitdirectory 上传）。
-    从文件相对路径解析 批次/单元/栏舍 三层结构。
-    逐张推理，按单元汇总，返回结果 + Excel。
+    接收多文件上传（支持文件夹或平铺图片）。
+    先通过水印 OCR 提取栏舍信息，再逐张推理，按单元汇总。
     """
     if not files:
         raise HTTPException(status_code=400, detail="至少需要上传一张图片")
 
-    # 1. 解析路径，建树
     MAX_BATCH_FILES = 500
     if len(files) > MAX_BATCH_FILES:
         raise HTTPException(status_code=400, detail=f"单次最多上传 {MAX_BATCH_FILES} 张图片")
 
+    # 1. 解析路径，提取批次名，收集图片
     batch_name = ""
-    unit_order: list[str] = []
-    units: dict[str, list[dict]] = _OrderedDict()  # unit_name → [{name, file}]
+    image_list: list[dict] = []
 
     for idx, f in enumerate(files):
-        # 优先使用前端传来的完整路径
         if idx < len(file_paths) and file_paths[idx]:
             path = file_paths[idx].replace("\\", "/")
         else:
             path = (f.filename or "").replace("\\", "/")
         parts = [p for p in path.split("/") if p]
 
-        if len(parts) < 2:
-            continue  # 跳过根目录下的散文件
-
-        if not batch_name:
+        if not batch_name and parts:
             batch_name = parts[0]
 
-        unit_name = parts[1] if len(parts) >= 2 else ""
-        file_name = parts[-1]
-
-        # 跳过栏舍号标识照
+        file_name = parts[-1] if parts else (f.filename or "")
         name_no_ext = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
         if name_no_ext == "栏舍号":
             continue
-
         if not f.content_type or not f.content_type.startswith("image/"):
             continue
 
-        if unit_name not in units:
-            units[unit_name] = []
-            unit_order.append(unit_name)
+        image_list.append({"name": file_name, "file": f, "full_path": path})
 
-        units[unit_name].append({"name": file_name, "file": f, "full_path": path})
+    if not image_list:
+        raise HTTPException(status_code=400, detail="未找到有效的图片文件")
 
-    if not units:
-        raise HTTPException(status_code=400, detail="未找到有效的图片文件（请确认目录结构：批次/单元/栏舍.jpg）")
+    if not batch_name:
+        batch_name = "未命名批次"
 
-    # 2. 逐张推理
+    # 2. 读取所有图片字节 + 运行水印 OCR
     model_path = resolve_model_path()
-    total_photos = 0
-    total_pigs = 0
-    results: list[dict] = []
-    image_paths: list[str] = []  # 用于 Excel 插图
-
-    # 创建临时目录存放原图
     import tempfile
     tmp_dir = Path(tempfile.mkdtemp(prefix="pigcount_batch_"))
 
+    image_bytes_list: list[bytes] = []
+    for item in image_list:
+        item["bytes"] = await item["file"].read()
+        image_bytes_list.append(item["bytes"])
+
+    watermark_results = await recognize_watermarks_batch(image_bytes_list)
+
+    # 3. 用水印结果分组：unit_name → pen_number → [items]
+    from collections import OrderedDict as _OD
+    unit_map: dict[str, dict[str, list[dict]]] = _OD()
+    unit_order: list[str] = []
+
+    for item, wm in zip(image_list, watermark_results):
+        item["watermark"] = wm
+        unit_name = (wm.get("unit_name") if wm else None) or "未识别单元"
+        pen_number = (wm.get("pen_number") if wm else None) or item["name"].rsplit(".", 1)[0]
+
+        if unit_name not in unit_map:
+            unit_map[unit_name] = _OD()
+            unit_order.append(unit_name)
+        if pen_number not in unit_map[unit_name]:
+            unit_map[unit_name][pen_number] = []
+        unit_map[unit_name][pen_number].append(item)
+
+    # 4. 逐张推理
+    total_photos = 0
+    total_pigs = 0
+    results: list[dict] = []
+    image_paths: list[str] = []
+    orig_image_paths: list[str] = []
+
     for unit_name in unit_order:
-        pens = units[unit_name]
+        pens_map = unit_map[unit_name]
         unit_pigs = 0
         unit_results: list[dict] = []
 
-        for pen in pens:
+        for pen_number, items in pens_map.items():
+            item = items[0]
             result = None
+            _annotated = None
             record_id = None
-            try:
-                image_bytes = await pen["file"].read()
+            wm = item.get("watermark")
+            wm_count = wm.get("count") if wm else None
 
-                # 保存原图到临时目录
-                img_path = tmp_dir / f"{unit_name}_{pen['name']}"
+            try:
+                image_bytes = item["bytes"]
+                img_path = tmp_dir / f"{unit_name}_{item['name']}"
                 img_path.write_bytes(image_bytes)
+                orig_image_paths.append(str(img_path))
 
                 image = decode_image(image_bytes)
                 result, _annotated = predict_image(
@@ -1383,11 +1420,11 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                 )
                 count = result.predicted_count
 
-                # 保存标注图到临时目录，用于 Excel 插图（带数字标注）
                 import cv2 as _cv2
-                ann_path = tmp_dir / f"ann_{unit_name}_{pen['name']}"
+                ann_path = tmp_dir / f"ann_{unit_name}_{item['name']}"
                 _cv2.imwrite(str(ann_path), _annotated)
                 image_paths.append(str(ann_path))
+
                 avg_conf = (
                     sum(d.confidence for d in result.detections) / len(result.detections)
                     if result.detections else 0
@@ -1397,9 +1434,10 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                      "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
                     for d in result.detections
                 ] if result.detections else []
+
                 record_id = await save_detection_record(
                     farm_id=farm_id,
-                    image_name=pen["full_path"],
+                    image_name=item["full_path"],
                     predicted_count=count,
                     processing_time_ms=result.processing_time_ms,
                     annotated_image=_annotated,
@@ -1407,11 +1445,16 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                     boxes=boxes_for_db,
                     original_image=image,
                 )
+
+                if record_id and wm:
+                    await save_watermark_data(record_id, wm)
+
             except Exception:
                 count = 0
 
-            pen_data = {
-                "pen_name": pen["name"],
+            unit_results.append({
+                "pen_name": item["name"],
+                "pen_number": pen_number,
                 "pig_count": count,
                 "processing_time_ms": result.processing_time_ms if result is not None else 0,
                 "annotated_image": create_thumbnail(_annotated, max_size=480, quality=70) if result is not None and _annotated is not None else None,
@@ -1427,8 +1470,10 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                      "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
                     for d in (result.detections if result else [])
                 ],
-            }
-            unit_results.append(pen_data)
+                "watermark_count": wm_count,
+                "watermark_unit": (wm.get("unit_name") if wm else None) or "",
+                "watermark": wm,
+            })
             unit_pigs += count
             total_photos += 1
             total_pigs += count
@@ -1439,11 +1484,24 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             "subtotal": unit_pigs,
         })
 
-    # 3. 生成 Excel（承储单位固定为公司名称）
+    # 5. 生成 Excel
     farm_name = "-"
-    excel_b64 = _build_batch_excel(batch_name, results, farm_name, image_paths)
+    wm_extras = {}
+    for unit in results:
+        for pen in unit["pens"]:
+            rid = pen.get("record_id")
+            wm = pen.get("watermark")
+            if rid and wm:
+                wm_extras[rid] = {
+                    "building": wm.get("building") or "",
+                    "unit_name": wm.get("unit_name") or "",
+                    "storage_unit": wm.get("storage_unit") or "",
+                    "pen_number": wm.get("pen_number") or "",
+                    "count": wm.get("count"),
+                }
+    excel_b64 = _build_batch_excel(batch_name, results, farm_name, image_paths, orig_image_paths, watermark_extras=wm_extras)
 
-    # 5. 清理临时文件
+    # 6. 清理临时文件
     import shutil
     try:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -1462,14 +1520,13 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
 
 @app.post("/api/batch/regenerate-excel")
 async def regenerate_batch_excel(request: dict):
-    """根据最新的 annotated_image 重新生成 Excel"""
+    """根据最新的 annotated_image 和水印数据重新生成 Excel"""
     try:
         batch_name = request.get("batch_name", "批次统计")
         units = request.get("units", [])
         if not units:
             raise HTTPException(status_code=400, detail="缺少 units 数据")
 
-        # 收集所有 record_id，批量查询最新的 annotated_image
         record_ids = []
         for unit in units:
             for pen in unit.get("pens", []):
@@ -1483,21 +1540,28 @@ async def regenerate_batch_excel(request: dict):
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    f"SELECT id, annotated_image FROM detection_records WHERE id IN ({placeholders})",
+                    f"SELECT id, annotated_image, original_image FROM detection_records WHERE id IN ({placeholders})",
                     record_ids
                 )
                 rows = cursor.fetchall()
                 image_map = {r["id"]: r["annotated_image"] for r in rows}
+                orig_map = {r["id"]: r.get("original_image") for r in rows}
 
-        # 用最新的 annotated_image 生成临时图片文件
+                cursor.execute(
+                    f"SELECT detection_record_id, pen_number, count, building, unit_name, storage_unit FROM watermark_data WHERE detection_record_id IN ({placeholders})",
+                    record_ids
+                )
+                wm_rows = cursor.fetchall()
+                wm_extras = {r["detection_record_id"]: r for r in wm_rows}
+
         import tempfile, cv2 as _cv2
         tmp_dir = Path(tempfile.mkdtemp(prefix="pigcount_excel_"))
         image_paths = []
-        flat_pens = []
+        orig_image_paths = []
         for unit in units:
             for pen in unit.get("pens", []):
-                flat_pens.append(pen)
                 rid = pen.get("record_id")
+                # 标注图
                 ann_b64 = image_map.get(rid)
                 if ann_b64:
                     if ann_b64.startswith("data:"):
@@ -1509,13 +1573,36 @@ async def regenerate_batch_excel(request: dict):
                         ann_path = tmp_dir / f"ann_{rid}.jpg"
                         _cv2.imwrite(str(ann_path), img_array)
                         image_paths.append(str(ann_path))
-                        continue
-                image_paths.append(None)
+                    else:
+                        image_paths.append(None)
+                else:
+                    image_paths.append(None)
+                # 原图
+                orig_b64 = orig_map.get(rid)
+                if orig_b64:
+                    if orig_b64.startswith("data:"):
+                        orig_b64 = orig_b64.split(",")[1]
+                    import base64 as _base64
+                    img_bytes = _base64.b64decode(orig_b64)
+                    img_array = _cv2.imdecode(np.frombuffer(img_bytes, np.uint8), _cv2.IMREAD_COLOR)
+                    if img_array is not None:
+                        orig_path = tmp_dir / f"orig_{rid}.jpg"
+                        _cv2.imwrite(str(orig_path), img_array)
+                        orig_image_paths.append(str(orig_path))
+                    else:
+                        orig_image_paths.append(None)
+                else:
+                    orig_image_paths.append(None)
+                # 注入水印数据
+                wm = wm_extras.get(rid) if rid else None
+                if wm:
+                    pen["watermark_count"] = wm.get("count")
+                    if not pen.get("watermark_unit") and wm.get("unit_name"):
+                        pen["watermark_unit"] = wm["unit_name"]
 
         farm_name = "-"
-        excel_b64 = _build_batch_excel(batch_name, units, farm_name, image_paths)
+        excel_b64 = _build_batch_excel(batch_name, units, farm_name, image_paths, orig_image_paths, watermark_extras=wm_extras)
 
-        # 清理临时文件
         import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -1562,51 +1649,42 @@ def _build_batch_excel(
     units: list[dict],
     farm_name: str = "-",
     image_paths: list[str] | None = None,
+    orig_image_paths: list[str] | None = None,
+    watermark_extras: dict | None = None,
 ) -> str:
-    """基于模板生成 Excel 并返回 base64 字符串。"""
+    """基于 excel_template_v2 生成 Excel 并返回 base64 字符串。"""
     from openpyxl import load_workbook
     from openpyxl.drawing.image import Image as XlImage
-    from openpyxl.styles import Border, Side, Font, Alignment
+    from openpyxl.styles import Border, Side, Font, Alignment, PatternFill
     from copy import copy
     import re
 
-    template_path = Path(__file__).parent / "excel_template.xlsx"
+    template_path = Path(__file__).parent / "excel_template_v2.xlsx"
     wb = load_workbook(str(template_path))
     ws = wb.active
 
-    folder_info = _parse_batch_folder(batch_name)
-
-    # 0. 先取消所有合并，再删行，避免 openpyxl 内部状态冲突
+    # 模板结构: Row1=标题, Row2=表头, Rows3-10=数据, Row11=汇总
     for mg in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mg))
+    ws.cell(row=1, column=1, value="活体生猪盘点一览表")
+    ws.merge_cells('A1:L1')
 
-    ws.cell(row=1, column=1, value="市本级活体生猪盘点一览表")
-    ws.merge_cells('A1:J1')
-    ws.delete_rows(2, 1)
-
-    # 删除后行号偏移
     DATA_START = 3
     TEMPLATE_DATA_END = 10
     SUMMARY_ORIG = 11
+    MAX_COL = 12
 
-    # 2. 清除数据区 {{占位符}} + 模板原始汇总行内容
     for r in range(DATA_START, SUMMARY_ORIG + 1):
-        for c in range(1, 11):
-            cell = ws.cell(row=r, column=c)
-            if isinstance(cell.value, str) and re.match(r'^\{\{.*\}\}$', cell.value):
-                cell.value = None
-    # 清除模板原始汇总行（第11行）的残留内容
-    for c in range(1, 11):
-        ws.cell(row=SUMMARY_ORIG, column=c).value = None
-        for c in range(1, 11):
+        for c in range(1, MAX_COL + 1):
             cell = ws.cell(row=r, column=c)
             if isinstance(cell.value, str) and re.match(r'^\{\{.*\}\}$', cell.value):
                 cell.value = None
 
-    # 2. 展开所有栏舍（简化名称）
+    # 展开所有栏舍
     flat_pens = []
     total_pigs = 0
-    unit_subtotals = []  # [(unit_name, pen_count, subtotal), ...]
+    total_watermark = 0
+    unit_subtotals = []
     for unit in units:
         simple_name = _simplify_unit_name(unit["unit_name"])
         pen_count = len(unit["pens"])
@@ -1614,35 +1692,37 @@ def _build_batch_excel(
         for pen in unit["pens"]:
             flat_pens.append({
                 "unit_name": simple_name,
-                "pen_number": _extract_pen_number(pen["pen_name"]),
+                "pen_number": pen.get("pen_number") or _extract_pen_number(pen["pen_name"]),
                 "pig_count": pen["pig_count"],
+                "watermark_count": pen.get("watermark_count"),
+                "watermark_unit": pen.get("watermark_unit", ""),
+                "record_id": pen.get("record_id"),
             })
             total_pigs += pen["pig_count"]
+            if pen.get("watermark_count") is not None:
+                total_watermark += pen["watermark_count"]
 
     data_count = len(flat_pens)
 
-    # 3. 数据超过8行时插入额外行
+    # 数据超过 8 行时插入额外行
     extra = data_count - 8
     if extra > 0:
         ws.insert_rows(SUMMARY_ORIG, amount=extra)
         for offset in range(extra):
             new_r = TEMPLATE_DATA_END + 1 + offset
-            for c in range(1, 11):
+            for c in range(1, MAX_COL + 1):
                 src = ws.cell(row=TEMPLATE_DATA_END, column=c)
                 dst = ws.cell(row=new_r, column=c)
                 dst.border = copy(src.border)
                 dst.font = copy(src.font)
                 dst.alignment = copy(src.alignment)
 
-    # 4. 数据区结束行
     data_end = DATA_START + data_count - 1
 
-    # 5. 填充数据 + B/C/D 每行写入
     thin = Side(style="thin")
     cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
     center = Alignment(horizontal="center", vertical="center")
 
-    # 记录每个 unit 块的起止行
     cursor = DATA_START
     unit_row_ranges = []
     for unit_name, pen_count, subtotal in unit_subtotals:
@@ -1653,57 +1733,122 @@ def _build_batch_excel(
 
     for i, item in enumerate(flat_pens):
         r = DATA_START + i
+        wm_extra = (watermark_extras or {}).get(item.get("record_id"))
         ws.cell(row=r, column=1, value=i + 1)
-        ws.cell(row=r, column=2, value=_sanitize_excel_text(farm_name))
-        ws.cell(row=r, column=3, value=_sanitize_excel_text(folder_info["building"]))
-        ws.cell(row=r, column=4, value=_sanitize_excel_text(folder_info["floor"]))
-        ws.cell(row=r, column=5, value=_sanitize_excel_text(item["unit_name"]))
-        ws.cell(row=r, column=6, value=_sanitize_excel_text(item["pen_number"]))
-        ws.cell(row=r, column=7, value=item["pig_count"])
-        # 全框线
-        for c in range(1, 11):
+        ws.cell(row=r, column=2, value=_sanitize_excel_text(
+            (wm_extra or {}).get("storage_unit") or farm_name))
+        ws.cell(row=r, column=3, value=_sanitize_excel_text(
+            (wm_extra or {}).get("building") or ""))
+        # D=所在单元: 优先用 wm_extras 的 unit_name，其次 watermark_unit，最后 flat_pens 的 unit_name
+        unit_val = ((wm_extra or {}).get("unit_name") or item.get("watermark_unit") or item["unit_name"])
+        ws.cell(row=r, column=4, value=_sanitize_excel_text(unit_val))
+        # E=栏号: 格式 "X号栏"
+        pen_raw = item["pen_number"]
+        pen_label = f"{pen_raw}号栏" if pen_raw and pen_raw.isdigit() else pen_raw
+        ws.cell(row=r, column=5, value=_sanitize_excel_text(pen_label))
+        # F=原图, G=标注图 (图片稍后插入)
+        wm_count = item.get("watermark_count")
+        ws.cell(row=r, column=8, value=wm_count if wm_count is not None else "N/A")
+        ws.cell(row=r, column=9, value=item["pig_count"])
+        if wm_count is not None:
+            ws.cell(row=r, column=10, value=wm_count - item["pig_count"])
+        else:
+            ws.cell(row=r, column=10, value="N/A")
+        for c in range(1, MAX_COL + 1):
             ws.cell(row=r, column=c).border = cell_border
             ws.cell(row=r, column=c).alignment = center
 
-    # 6. E列（所在单元）+ I列（单元总数）按 unit 块合并
     for start_r, end_r, _, subtotal in unit_row_ranges:
         if end_r > start_r:
-            ws.merge_cells(start_row=start_r, start_column=5, end_row=end_r, end_column=5)
-            ws.merge_cells(start_row=start_r, start_column=9, end_row=end_r, end_column=9)
-        ws.cell(row=start_r, column=9, value=subtotal)
+            ws.merge_cells(start_row=start_r, start_column=4, end_row=end_r, end_column=4)
+            ws.merge_cells(start_row=start_r, start_column=11, end_row=end_r, end_column=11)
+        ws.cell(row=start_r, column=11, value=subtotal)
 
-    # 7. 汇总行：A-D 留空，E:H 合并显示"累计："，I 列显示总数
     summary_row = data_end + 1
-    for c in range(1, 5):
+    summary_fill = PatternFill(start_color="E8F0FE", end_color="E8F0FE", fill_type="solid")
+    summary_font = Font(bold=True, size=13)
+    for c in range(1, MAX_COL + 1):
         ws.cell(row=summary_row, column=c).value = None
-    ws.merge_cells(start_row=summary_row, start_column=5, end_row=summary_row, end_column=8)
-    ws.cell(row=summary_row, column=5, value="累计：")
+    ws.merge_cells(start_row=summary_row, start_column=1, end_row=summary_row, end_column=7)
+    ws.cell(row=summary_row, column=1, value="累计：")
+    ws.cell(row=summary_row, column=8, value=total_watermark)
     ws.cell(row=summary_row, column=9, value=total_pigs)
-    for c in range(1, 11):
-        ws.cell(row=summary_row, column=c).border = cell_border
-        ws.cell(row=summary_row, column=c).alignment = center
+    ws.cell(row=summary_row, column=10, value=total_watermark - total_pigs)
+    ws.cell(row=summary_row, column=11, value=total_pigs)
+    for c in range(1, MAX_COL + 1):
+        cell = ws.cell(row=summary_row, column=c)
+        cell.border = cell_border
+        cell.alignment = Alignment(horizontal="right" if c == 1 else "center", vertical="center")
+        cell.fill = summary_fill
+        cell.font = summary_font
 
-    # 8. 插入原图到 H 列（Pillow 缩放到 350x210, quality 100）
-    ws.column_dimensions['H'].width = 50
+    # 清除 summary_row 以下的空行（值+边框+样式）
+    no_border = Border()
+    for r in range(summary_row + 1, summary_row + 20):
+        has_any = False
+        for c in range(1, MAX_COL + 1):
+            cell = ws.cell(row=r, column=c)
+            if cell.value is not None:
+                cell.value = None
+                has_any = True
+            if cell.border != no_border:
+                cell.border = no_border
+                has_any = True
+        if not has_any:
+            break
+
+    # 插入图片（居中）
+    ws.column_dimensions['F'].width = 40
+    ws.column_dimensions['G'].width = 50
     ROW_HEIGHT_PT = 160
     IMG_TARGET_W, IMG_TARGET_H = 350, 210
 
+    def _add_centered_image(ws, img_path, cell_ref, col_width_chars, row_height_pt, thumb_w, thumb_h):
+        from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+        from openpyxl.drawing.xdr import XDRPositiveSize2D
+        from openpyxl.utils.units import pixels_to_EMU
+        from openpyxl.utils import column_index_from_string
+        col_idx = column_index_from_string(cell_ref[0]) - 1
+        row_idx = int(cell_ref[1:]) - 1
+        col_width_px = int(col_width_chars * 7.5)
+        row_height_px = int(row_height_pt * 96 / 72)
+        x_off = max(0, (col_width_px - thumb_w) // 2) * 914400 // 96
+        y_off = max(0, (row_height_px - thumb_h) // 2) * 914400 // 96
+        img = XlImage(img_path)
+        img.width = thumb_w
+        img.height = thumb_h
+        marker = AnchorMarker(col=col_idx, colOff=x_off, row=row_idx, rowOff=y_off)
+        ext = XDRPositiveSize2D(pixels_to_EMU(thumb_w), pixels_to_EMU(thumb_h))
+        img.anchor = OneCellAnchor(_from=marker, ext=ext)
+        ws._images.append(img)
+
     if image_paths:
-        thumb_dir = Path(image_paths[0]).parent if image_paths else None
-        for i, img_path in enumerate(image_paths):
+        tmp_dir = Path(image_paths[0]).parent if image_paths else None
+        for i in range(data_count):
             r = DATA_START + i
             if r > data_end:
                 break
             ws.row_dimensions[r].height = ROW_HEIGHT_PT
-            if img_path and Path(img_path).exists():
+            # 原图 → F 列
+            if orig_image_paths and i < len(orig_image_paths) and orig_image_paths[i] and Path(orig_image_paths[i]).exists():
                 try:
                     from PIL import Image as PilImage
-                    pil_img = PilImage.open(img_path)
+                    pil_img = PilImage.open(orig_image_paths[i])
                     pil_img.thumbnail((IMG_TARGET_W, IMG_TARGET_H), PilImage.LANCZOS)
-                    thumb_path = thumb_dir / f"thumb_{i}.jpg"
+                    thumb_path = tmp_dir / f"orig_thumb_{i}.jpg"
                     pil_img.save(str(thumb_path), quality=100)
-                    xl_img = XlImage(str(thumb_path))
-                    ws.add_image(xl_img, f'H{r}')
+                    _add_centered_image(ws, str(thumb_path), f'F{r}', 40, ROW_HEIGHT_PT, pil_img.width, pil_img.height)
+                except Exception:
+                    pass
+            # 标注图 → G 列
+            if i < len(image_paths) and image_paths[i] and Path(image_paths[i]).exists():
+                try:
+                    from PIL import Image as PilImage
+                    pil_img = PilImage.open(image_paths[i])
+                    pil_img.thumbnail((IMG_TARGET_W, IMG_TARGET_H), PilImage.LANCZOS)
+                    thumb_path = tmp_dir / f"ann_thumb_{i}.jpg"
+                    pil_img.save(str(thumb_path), quality=100)
+                    _add_centered_image(ws, str(thumb_path), f'G{r}', 50, ROW_HEIGHT_PT, pil_img.width, pil_img.height)
                 except Exception:
                     pass
 

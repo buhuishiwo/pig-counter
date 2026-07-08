@@ -51,4 +51,21 @@ CREATE TABLE `pig_farms`  (
 ) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
 
+DROP TABLE IF EXISTS `watermark_data`;
+CREATE TABLE `watermark_data` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `detection_record_id` int NOT NULL,
+  `capture_time` varchar(100) DEFAULT NULL,
+  `location` varchar(255) DEFAULT NULL,
+  `building` varchar(100) DEFAULT NULL,
+  `unit_name` varchar(50) DEFAULT NULL,
+  `pen_number` varchar(50) DEFAULT NULL,
+  `count` int DEFAULT NULL,
+  `storage_unit` varchar(200) DEFAULT NULL,
+  `raw_text` text DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_watermark_record_id`(`detection_record_id`),
+  CONSTRAINT `watermark_data_ibfk_1` FOREIGN KEY (`detection_record_id`) REFERENCES `detection_records` (`id`) ON DELETE CASCADE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
+
 SET FOREIGN_KEY_CHECKS = 1;

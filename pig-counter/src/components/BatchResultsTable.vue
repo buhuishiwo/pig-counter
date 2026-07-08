@@ -72,7 +72,9 @@
             <th>{{ batchResults.batch_name }}</th>
             <th>单元</th>
             <th>栏舍</th>
-            <th>猪数</th>
+            <th>水印数量</th>
+            <th>标注数量</th>
+            <th>差值</th>
           </tr>
         </thead>
         <tbody v-for="unit in batchResults.units" :key="unit.unit_name">
@@ -82,11 +84,15 @@
             <td v-if="pi === 0" :rowspan="unit.pens.length">{{ unit.unit_name }}</td>
             <td v-if="pi > 0" style="display:none"></td>
             <td>{{ pen.pen_name }}</td>
+            <td class="batch-num">{{ pen.watermark_count != null ? pen.watermark_count : 'N/A' }}</td>
             <td class="batch-num">{{ pen.pig_count }}</td>
+            <td class="batch-num" :class="{ 'diff-negative': pen.watermark_count != null && pen.watermark_count - pen.pig_count < 0 }">
+              {{ pen.watermark_count != null ? pen.watermark_count - pen.pig_count : 'N/A' }}
+            </td>
           </tr>
           <tr class="subtotal-row">
             <td></td>
-            <td colspan="2">{{ unit.unit_name }} 小计</td>
+            <td colspan="4">{{ unit.unit_name }} 小计</td>
             <td class="batch-num">{{ unit.subtotal }}</td>
           </tr>
         </tbody>
@@ -364,7 +370,7 @@ export default {
 
 .batch-total-bar {
   display: grid;
-  grid-template-columns: 40px 1fr 120px 80px;
+  grid-template-columns: 40px 1fr 100px 80px 80px 80px;
   align-items: center;
   padding: 10px 0;
   background: #fff;
@@ -422,4 +428,5 @@ export default {
 
 .batch-pen-row { transition: background 0.15s; }
 .batch-pen-row:hover { background: rgba(0,122,255,0.04); }
+.diff-negative { color: #ff3b30 !important; }
 </style>
