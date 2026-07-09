@@ -76,6 +76,7 @@ class PredictResponse(BaseModel):
     processing_time_ms: float
     annotated_image: str
     record_id: int | None = None
+    watermark_label: str | None = None
 
 
 class BatchPredictResponse(BaseModel):
@@ -429,13 +430,16 @@ async def predict_batch(
             )
 
             # 水印 OCR
+            wm_label = None
             if record_id:
                 wm = await recognize_watermark(image_bytes)
                 if wm:
                     await save_watermark_data(record_id, wm)
+                    if wm.get("pen_number"):
+                        wm_label = f"{wm.get('building') or ''}{wm.get('unit_name') or ''}{wm['pen_number']}号栏"
 
-            # 设置返回结果的 record_id
-            result = result.model_copy(update={"record_id": record_id})
+            # 设置返回结果的 record_id + watermark_label
+            result = result.model_copy(update={"record_id": record_id, "watermark_label": wm_label})
             results.append(result)
             total_pigs += result.predicted_count
         

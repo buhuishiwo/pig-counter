@@ -176,7 +176,8 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null, signal
       })),
       annotatedImage: result.annotated_image || null,
       inferenceTime: result.processing_time_ms ?? null,
-      recordId: result.record_id || null
+      recordId: result.record_id || null,
+      watermarkLabel: result.watermark_label || null
     }
   }
   
@@ -206,7 +207,8 @@ export async function analyzeImage(imageFiles, onProgress, farmId = null, signal
         annotatedImage: result.annotated_image || null,
         inferenceTime: result.processing_time_ms ?? null,
         fileName: files[index].name,
-        recordId: result.record_id || null
+        recordId: result.record_id || null,
+        watermarkLabel: result.watermark_label || null
       }
     })
   }

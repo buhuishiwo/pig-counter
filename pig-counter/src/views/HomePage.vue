@@ -32,7 +32,7 @@
         :hasImage="hasImage" :hasResult="hasResult" :annotatedImage="annotatedImage"
         :previewUrl="previewUrl" :isAnalyzing="isAnalyzing" :result="result" :imageMeta="imageMeta"
         :hoveredBox="hoveredBox" :inferenceTime="inferenceTime" :confidencePct="confidencePct"
-        :confClass="confClass" :pigCount="pigCount" :resultsCount="$store.state.results.length"
+        :confClass="confClass" :pigCount="pigCount" :watermarkLabel="result?.watermarkLabel || ''" :resultsCount="$store.state.results.length"
         :currentImageIndex="$store.state.currentImageIndex" :batchMode="!!batchTree"
         :batchProcessing="batchProcessing" :batchFullLoading="batchFullLoading" :batchTotalPigs="batchResults?.total_pigs"
         :uploadProgress="uploadProgress"

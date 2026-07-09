@@ -20,6 +20,9 @@
             <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ pigCount }} 头猪</span>
           </transition>
           <transition name="meta-slide">
+            <span class="img-card-chip chip-blue" v-if="hasResult && watermarkLabel">{{ watermarkLabel }}</span>
+          </transition>
+          <transition name="meta-slide">
             <span v-if="resultsCount > 1" class="img-card-count">
               {{ currentImageIndex + 1 }}/{{ resultsCount }}
             </span>
@@ -132,6 +135,7 @@ export default {
     confidencePct: { type: Number, default: 0 },
     confClass: { type: String, default: '' },
     pigCount: { type: Number, default: 0 },
+    watermarkLabel: { type: String, default: '' },
     resultsCount: { type: Number, default: 0 },
     currentImageIndex: { type: Number, default: 0 },
     batchMode: { type: Boolean, default: false },
@@ -370,6 +374,12 @@ export default {
   background: rgba(52, 199, 89, 0.1);
   border-color: rgba(52, 199, 89, 0.25);
   color: var(--green)
+}
+
+.chip-blue {
+  background: rgba(0, 122, 255, 0.08);
+  border-color: rgba(0, 122, 255, 0.2);
+  color: var(--blue)
 }
 
 .img-card-count {
