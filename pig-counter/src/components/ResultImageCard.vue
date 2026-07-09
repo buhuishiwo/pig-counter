@@ -6,8 +6,9 @@
         <span class="traffic-dot" :class="batchMode ? (batchProcessing ? 'dot-yellow' : 'dot-green') : (hasResult ? 'dot-green' : 'dot-gray')"></span>
         <span class="img-card-title">{{ batchMode ? (batchProcessing ? '批量扫描中…' : '批量结果') : '标注结果' }}</span>
         <template v-if="batchMode && selectedBatchImage">
-          <span class="img-card-chip">{{ selectedBatchImage.unit_name }}</span>
-          <span class="img-card-chip">{{ selectedBatchImage.pen_name }}</span>
+          <span class="img-card-chip chip-blue" v-if="selectedBatchImage.watermark?.building || selectedBatchImage.watermark?.unit_name">
+            {{ (selectedBatchImage.watermark?.building || '') + (selectedBatchImage.watermark?.unit_name || '') + (selectedBatchImage.watermark?.pen_number ? selectedBatchImage.watermark.pen_number + '号栏' : '') }}
+          </span>
           <span v-if="batchAnnotatedImages.length > 1" class="img-card-count">
             {{ batchImageIndex + 1 }}/{{ batchAnnotatedImages.length }}
           </span>
