@@ -34,7 +34,8 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
             record_id: pen.record_id || null,
             image_width: pen.image_width || 0,
             image_height: pen.image_height || 0,
-            processing_time_ms: pen.processing_time_ms || 0
+            processing_time_ms: pen.processing_time_ms || 0,
+            watermark: pen.watermark || null
           })
         }
       }
