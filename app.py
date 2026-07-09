@@ -809,6 +809,7 @@ class DetectionRecordWithImageResponse(BaseModel):
     confidence: float = 0
     annotated_image: str | None  # base64 缩略图
     created_at: datetime
+    watermark_label: str | None = None
  
  
 class DetectionRecordWithImageListResponse(BaseModel):
@@ -884,9 +885,11 @@ async def get_detection_records_with_images(
                     SELECT
                         dr.id, dr.farm_id, pf.name AS farm_name,
                         dr.image_name, dr.predicted_count,
-                        dr.processing_time_ms, dr.confidence, dr.annotated_image, dr.created_at
+                        dr.processing_time_ms, dr.confidence, dr.annotated_image, dr.created_at,
+                        wd.building AS wm_building, wd.unit_name AS wm_unit, wd.pen_number AS wm_pen
                     FROM detection_records dr
                     LEFT JOIN pig_farms pf ON dr.farm_id = pf.id
+                    LEFT JOIN watermark_data wd ON wd.detection_record_id = dr.id
                     {where_clause}
                     ORDER BY dr.created_at DESC
                     LIMIT %s OFFSET %s
@@ -907,6 +910,10 @@ async def get_detection_records_with_images(
                         confidence=float(r.get("confidence") or 0),
                         annotated_image=r["annotated_image"],
                         created_at=r["created_at"],
+                        watermark_label=(
+                            f"{r['wm_building'] or ''}{r['wm_unit'] or ''}{r['wm_pen'] or ''}号栏"
+                            if r.get("wm_pen") else None
+                        ),
                     )
                     for r in records
                 ]

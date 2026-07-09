@@ -336,7 +336,7 @@
                 <span class="gallery-farm" v-if="record.farm_name" @mouseenter="checkTooltip($event)" @mouseleave="hideTooltip()">{{ record.farm_name.length > 11 ? record.farm_name.slice(0, 11) + '...' : record.farm_name }}</span>
                 <span class="gallery-date">{{ formatDateShort(record.created_at) }}</span>
               </div>
-              <div class="gallery-filename" :title="record.image_name">{{ record.image_name }}</div>
+              <div class="gallery-filename" :title="record.watermark_label || record.image_name">{{ record.watermark_label || record.image_name }}</div>
             </div>
           </div>
         </div>
