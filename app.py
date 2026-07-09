@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from watermark_ocr import recognize_watermarks_batch
+from watermark_ocr import recognize_watermark, recognize_watermarks_batch
 
 SERVICE_DIR = Path(__file__).resolve().parent
 
@@ -427,6 +427,12 @@ async def predict_batch(
                 boxes=boxes_data,
                 original_image=image,
             )
+
+            # 水印 OCR
+            if record_id:
+                wm = await recognize_watermark(image_bytes)
+                if wm:
+                    await save_watermark_data(record_id, wm)
 
             # 设置返回结果的 record_id
             result = result.model_copy(update={"record_id": record_id})
