@@ -131,6 +131,11 @@ export default {
       view: 'summary'
     }
   },
+  watch: {
+    batchResults() {
+      this.view = 'summary'
+    }
+  },
   computed: {
     maxSubtotal() {
       if (!this.batchResults || !this.batchResults.units) return 1

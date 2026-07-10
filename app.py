@@ -1816,9 +1816,9 @@ def _build_batch_excel(
 
     # 插入图片（居中）
     ws.column_dimensions['F'].width = 40
-    ws.column_dimensions['G'].width = 50
-    ROW_HEIGHT_PT = 160
-    IMG_TARGET_W, IMG_TARGET_H = 350, 210
+    ws.column_dimensions['G'].width = 40
+    ROW_HEIGHT_PT = 320
+    IMG_TARGET_W, IMG_TARGET_H = 700, 420
 
     def _add_centered_image(ws, img_path, cell_ref, col_width_chars, row_height_pt, thumb_w, thumb_h):
         from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
@@ -1829,7 +1829,7 @@ def _build_batch_excel(
         row_idx = int(cell_ref[1:]) - 1
         col_width_px = int(col_width_chars * 7.5)
         row_height_px = int(row_height_pt * 96 / 72)
-        x_off = max(0, (col_width_px - thumb_w) // 2) * 914400 // 96
+        x_off = 0
         y_off = max(0, (row_height_px - thumb_h) // 2) * 914400 // 96
         img = XlImage(img_path)
         img.width = thumb_w
@@ -1865,7 +1865,7 @@ def _build_batch_excel(
                     pil_img.thumbnail((IMG_TARGET_W, IMG_TARGET_H), PilImage.LANCZOS)
                     thumb_path = tmp_dir / f"ann_thumb_{i}.jpg"
                     pil_img.save(str(thumb_path), quality=100)
-                    _add_centered_image(ws, str(thumb_path), f'G{r}', 50, ROW_HEIGHT_PT, pil_img.width, pil_img.height)
+                    _add_centered_image(ws, str(thumb_path), f'G{r}', 40, ROW_HEIGHT_PT, pil_img.width, pil_img.height)
                 except Exception:
                     pass
 

@@ -4,7 +4,7 @@
     <div class="img-card-header">
       <div class="img-card-header-left">
         <span class="traffic-dot" :class="batchMode ? (batchProcessing ? 'dot-yellow' : 'dot-green') : (hasResult ? 'dot-green' : 'dot-gray')"></span>
-        <span class="img-card-title">{{ batchMode ? (batchProcessing ? '批量扫描中…' : '批量结果') : '标注结果' }}</span>
+        <span class="img-card-title">{{ batchMode ? (batchProcessing ? '批量扫描中…' : '标注视图') : '标注结果' }}</span>
         <template v-if="batchMode && selectedBatchImage">
           <span class="img-card-chip chip-blue" v-if="selectedBatchImage.watermark?.building || selectedBatchImage.watermark?.unit_name">
             {{ (selectedBatchImage.watermark?.building || '') + (selectedBatchImage.watermark?.unit_name || '') + (selectedBatchImage.watermark?.pen_number ? selectedBatchImage.watermark.pen_number + '号栏' : '') }}
