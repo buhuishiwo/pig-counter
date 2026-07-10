@@ -153,8 +153,8 @@ def draw_detections(image: np.ndarray, detections: list[DetectionBox]) -> np.nda
         box_short = min(det.x2 - det.x1, det.y2 - det.y1)
         label = str(index)
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = max(2.0, min(box_short / 35.0, 4.0))
-        thickness = max(3, int(font_scale * 2))
+        font_scale = max(1.0, min(box_short / 70.0, 2.0))
+        thickness = 2
         (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
         tx = cx - tw // 2
         ty = cy + th // 2
@@ -1032,8 +1032,8 @@ async def update_detection_record(
                             cy = (y1 + y2) // 2
                             box_short = min(x2 - x1, y2 - y1)
                             font = cv2.FONT_HERSHEY_SIMPLEX
-                            font_scale = max(2.0, min(box_short / 35.0, 4.0))
-                            thickness = max(3, int(font_scale * 2))
+                            font_scale = max(1.0, min(box_short / 70.0, 2.0))
+                            thickness = 2
                             label = str(idx)
                             (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
                             tx = cx - tw // 2

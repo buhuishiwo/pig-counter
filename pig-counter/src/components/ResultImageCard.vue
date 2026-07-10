@@ -9,6 +9,7 @@
           <span class="img-card-chip chip-blue" v-if="selectedBatchImage.watermark?.building || selectedBatchImage.watermark?.unit_name">
             {{ (selectedBatchImage.watermark?.building || '') + (selectedBatchImage.watermark?.unit_name || '') + (selectedBatchImage.watermark?.pen_number ? selectedBatchImage.watermark.pen_number + '号栏' : '') }}
           </span>
+          <span class="img-card-chip chip-green" v-if="batchTotalPigs">共 {{ batchTotalPigs }} 头猪</span>
           <span v-if="batchAnnotatedImages.length > 1" class="img-card-count">
             {{ batchImageIndex + 1 }}/{{ batchAnnotatedImages.length }}
           </span>
@@ -18,10 +19,10 @@
         </template>
         <template v-else>
           <transition name="meta-slide">
-            <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ pigCount }} 头猪</span>
+            <span class="img-card-chip chip-blue" v-if="hasResult && watermarkLabel">{{ watermarkLabel }}</span>
           </transition>
           <transition name="meta-slide">
-            <span class="img-card-chip chip-blue" v-if="hasResult && watermarkLabel">{{ watermarkLabel }}</span>
+            <span class="img-card-chip chip-green" v-if="hasResult">检测到 {{ pigCount }} 头猪</span>
           </transition>
           <transition name="meta-slide">
             <span v-if="resultsCount > 1" class="img-card-count">
@@ -243,17 +244,6 @@ export default {
         ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = isH ? 2.5 : 1.8
         ctx.shadowColor = col; ctx.shadowBlur = isH ? 10 : 5; ctx.globalAlpha = lt
         ctx.strokeRect(c.x1, c.y1, w, h); ctx.restore()
-        if (lt > 0.6) {
-          const la = (lt - 0.6) / 0.4
-          ctx.save(); ctx.globalAlpha = la
-          const label = (i + 1) + '  ' + (box.score * 100).toFixed(0) + '%'
-          ctx.font = 'bold 11px -apple-system,monospace'
-          const tw = ctx.measureText(label).width
-          const labelY = Math.max(2, c.y1 - 22)
-          ctx.fillStyle = isH ? 'rgba(255,149,0,0.88)' : 'rgba(52,199,89,0.88)'
-          ctx.beginPath(); ctx.roundRect(c.x1, labelY, tw + 12, 20, 4); ctx.fill()
-          ctx.fillStyle = '#fff'; ctx.fillText(label, c.x1 + 6, labelY + 14); ctx.restore()
-        }
       })
     },
     clearCanvas() { const c = this.$refs.boxCanvas; if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height) },

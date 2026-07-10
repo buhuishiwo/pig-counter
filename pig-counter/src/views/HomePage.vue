@@ -441,8 +441,14 @@ export default {
         c.getContext('2d').drawImage(img, 0, 0)
         const link = document.createElement('a')
         let baseName = '识别结果'
-        if (imageMeta.value?.name) baseName = imageMeta.value.name.replace(/\.[^.]+$/, '')
-        else if (selectedBatchImage.value) { const u = selectedBatchImage.value.unit_name || ''; const p = (selectedBatchImage.value.pen_name || '').replace(/\.[^.]+$/, ''); baseName = u ? `${u}_${p}` : p }
+        if (selectedBatchImage.value?.watermark) {
+          const w = selectedBatchImage.value.watermark
+          baseName = (w.building || '') + (w.unit_name || '') + (w.pen_number ? w.pen_number + '号栏' : '') || baseName
+        } else if (result.value?.watermarkLabel) {
+          baseName = result.value.watermarkLabel
+        } else if (imageMeta.value?.name) {
+          baseName = imageMeta.value.name.replace(/\.[^.]+$/, '')
+        }
         link.download = `${baseName}_标注结果.png`; link.href = c.toDataURL('image/png'); link.click()
         store.commit('ADD_LOG', { msg: '已导出标注图片', type: 'success' })
       }
