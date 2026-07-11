@@ -68,4 +68,15 @@ CREATE TABLE `watermark_data` (
   CONSTRAINT `watermark_data_ibfk_1` FOREIGN KEY (`detection_record_id`) REFERENCES `detection_records` (`id`) ON DELETE CASCADE
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
 
+DROP TABLE IF EXISTS `system_logs`;
+CREATE TABLE `system_logs` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `level` varchar(10) NOT NULL COMMENT 'info|success|warn|error',
+  `message` varchar(500) NOT NULL,
+  `source` varchar(20) NOT NULL DEFAULT 'backend' COMMENT 'backend|frontend',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_system_logs_created_at`(`created_at`)
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
+
 SET FOREIGN_KEY_CHECKS = 1;

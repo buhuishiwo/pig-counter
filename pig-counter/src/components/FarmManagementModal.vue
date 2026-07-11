@@ -82,10 +82,10 @@ export default {
         if (response.success) {
           this.$emit('farm-added', response.data)
           this.newFarmName = ''
-          this.$store.commit('ADD_LOG', { msg: `成功添加猪场：${response.data.name}`, type: 'success' })
+          this.$store.dispatch('addLog', { msg: `成功添加猪场：${response.data.name}`, type: 'success' })
         }
       } catch (err) {
-        this.$store.commit('ADD_LOG', { msg: '添加猪场失败：' + err.message, type: 'error' })
+        this.$store.dispatch('addLog', { msg: '添加猪场失败：' + err.message, type: 'error' })
       } finally {
         this.isAddingFarm = false
       }
@@ -112,10 +112,10 @@ export default {
         const response = await updateFarm(this.editingFarmId, name)
         if (response.success) {
           this.$emit('farm-updated', response.data)
-          this.$store.commit('ADD_LOG', { msg: `成功更新猪场：${response.data.name}`, type: 'success' })
+          this.$store.dispatch('addLog', { msg: `成功更新猪场：${response.data.name}`, type: 'success' })
         }
       } catch (err) {
-        this.$store.commit('ADD_LOG', { msg: '更新猪场失败：' + err.message, type: 'error' })
+        this.$store.dispatch('addLog', { msg: '更新猪场失败：' + err.message, type: 'error' })
       } finally {
         this.editingFarmId = null
         this.editingFarmName = ''
@@ -129,10 +129,10 @@ export default {
         const response = await deleteFarm(farmId)
         if (response.success) {
           this.$emit('farm-deleted', farmId)
-          this.$store.commit('ADD_LOG', { msg: `成功删除猪场：${farm.name}`, type: 'success' })
+          this.$store.dispatch('addLog', { msg: `成功删除猪场：${farm.name}`, type: 'success' })
         }
       } catch (err) {
-        this.$store.commit('ADD_LOG', { msg: '删除猪场失败：' + err.message, type: 'error' })
+        this.$store.dispatch('addLog', { msg: '删除猪场失败：' + err.message, type: 'error' })
       }
     },
     formatFarmDate(dateStr) {

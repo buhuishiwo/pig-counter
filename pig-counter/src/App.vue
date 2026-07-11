@@ -186,7 +186,7 @@ export default {
     async function runSingleAnalysis() {
       if (!hasImage.value || isAnalyzing.value || !selectedFarmId.value) return
       if (!store.state.serviceOnline) {
-        store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
+        store.dispatch('addLog', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
         notify.showNotify('error', '服务不可用', '后端服务离线，无法识别图片')
         return
       }
@@ -194,7 +194,7 @@ export default {
       store.commit('SET_PROGRESS', 0)
       const { analyzeImage } = await import('@/api/pigModel')
       const imageFiles = store.state.imageFiles.length > 0 ? store.state.imageFiles : [store.state.imageFile]
-      store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
+      store.dispatch('addLog', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
       try {
         const result = await analyzeImage(imageFiles, (p) => { store.commit('SET_PROGRESS', p) }, selectedFarmId.value)
         if (result.totalImages) {
@@ -202,19 +202,19 @@ export default {
           if (!window.__modelOriginalCount) window.__modelOriginalCount = result.totalPigs
           store.commit('SET_PROGRESS', 100)
           setTimeout(() => notify.showNotify('success', '识别完成', `${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`), 500)
-          store.commit('ADD_LOG', { msg: `识别完成：${result.totalImages} 张，共 ${result.totalPigs} 头猪`, type: 'success' })
+          store.dispatch('addLog', { msg: `识别完成：${result.totalImages} 张，共 ${result.totalPigs} 头猪`, type: 'success' })
         } else {
           store.commit('SET_RESULT', result)
           if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
           store.commit('SET_PROGRESS', 100)
           setTimeout(() => notify.showNotify('success', '识别完成', `检测到 ${result.count} 头猪`), 500)
-          store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+          store.dispatch('addLog', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
         }
         await stats.loadDetectionStats()
       } catch (err) {
         const isCancel = err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED'
-        if (isCancel) { store.commit('ADD_LOG', { msg: '识别已取消', type: 'info' }) }
-        else { store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' }); notify.showNotify('error', '识别失败', err.message) }
+        if (isCancel) { store.dispatch('addLog', { msg: '识别已取消', type: 'info' }) }
+        else { store.dispatch('addLog', { msg: '识别失败：' + err.message, type: 'error' }); notify.showNotify('error', '识别失败', err.message) }
       } finally { store.commit('SET_ANALYZING', false) }
     }
 

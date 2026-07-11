@@ -43,7 +43,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
     editDrawEnd.value = null
     editHint.value = 'select'
     showEditModal.value = true
-    store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
+    store.dispatch('addLog', { msg: '已进入编辑模式', type: 'info' })
   }
 
   function closeEditModal() {
@@ -53,7 +53,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
     editSelectedIndex.value = null
     editImageUrl.value = null
     editHint.value = 'select'
-    store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
+    store.dispatch('addLog', { msg: '已退出编辑模式', type: 'info' })
   }
 
   function drawEditCanvas(canvasRef, imgRef) {
@@ -135,7 +135,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
     editBoxes.value.push({ x1, y1, x2, y2, score: 1.0, class_name: 'pig' })
     editSelectedIndex.value = editBoxes.value.length - 1
     drawEditCanvas(canvasRef, imgRef)
-    store.commit('ADD_LOG', { msg: `已添加新识别框 #${editBoxes.value.length}`, type: 'info' })
+    store.dispatch('addLog', { msg: `已添加新识别框 #${editBoxes.value.length}`, type: 'info' })
   }
 
   function onEditCanvasClick(e, canvasRef, imgRef) {
@@ -154,21 +154,21 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
       editBoxes.value.splice(clicked, 1)
       editSelectedIndex.value = null
       drawEditCanvas(canvasRef, imgRef)
-      store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+      store.dispatch('addLog', { msg: '已删除识别框', type: 'info' })
     }
   }
 
   function addBoxInModal() {
     editBoxes.value.push({ x1: 100, y1: 100, x2: 200, y2: 200, score: 1.0, class_name: 'pig' })
     editSelectedIndex.value = editBoxes.value.length - 1
-    store.commit('ADD_LOG', { msg: '已添加新识别框', type: 'info' })
+    store.dispatch('addLog', { msg: '已添加新识别框', type: 'info' })
   }
 
   function deleteBoxInModal() {
     if (editSelectedIndex.value === null) return
     editBoxes.value.splice(editSelectedIndex.value, 1)
     editSelectedIndex.value = null
-    store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+    store.dispatch('addLog', { msg: '已删除识别框', type: 'info' })
   }
 
   async function saveBoxesToDb({ resultCardRef, nextTick }) {
@@ -187,7 +187,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
       } catch (_) {}
     }
     if (!editRecordId.value) {
-      store.commit('ADD_LOG', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
+      store.dispatch('addLog', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
       showNotify('error', '保存失败', '无 recordId，请先重新识别')
       return
     }
@@ -238,7 +238,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
         if (store.state.results[idx]) store.state.results[idx].count = editBoxes.value.length
         if (res.annotated_image) store.commit('SET_RESULT', { ...store.state.result, annotatedImage: res.annotated_image })
       }
-      store.commit('ADD_LOG', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
+      store.dispatch('addLog', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
       showNotify('success', '保存成功', `已更新 ${editBoxes.value.length} 个识别框`)
       const boxesSnapshot = JSON.parse(JSON.stringify(editBoxes.value))
       closeEditModal()
@@ -250,7 +250,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
         })
       }
     } catch (e) {
-      store.commit('ADD_LOG', { msg: '保存失败：' + e.message, type: 'error' })
+      store.dispatch('addLog', { msg: '保存失败：' + e.message, type: 'error' })
       showNotify('error', '保存失败', e.message)
     }
   }
@@ -278,7 +278,7 @@ export function useEdit({ showNotify, activeResult, batchResults, selectedBatchI
       link.download = `${baseName}_标注结果.png`
       link.href = exportCanvas.toDataURL('image/png')
       link.click()
-      store.commit('ADD_LOG', { msg: '已导出标注图片', type: 'success' })
+      store.dispatch('addLog', { msg: '已导出标注图片', type: 'success' })
     }
     img.src = src
   }

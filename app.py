@@ -335,12 +335,40 @@ async def validation_exception_handler(request, exc):
 
 
 
+def _cleanup_expired_records() -> None:
+    """删除超过1年的识别记录及关联水印数据"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) AS cnt FROM detection_records WHERE created_at < NOW() - INTERVAL 1 YEAR")
+                cnt = cursor.fetchone()["cnt"]
+                if cnt == 0:
+                    return
+                cursor.execute("DELETE FROM detection_records WHERE created_at < NOW() - INTERVAL 1 YEAR")
+                conn.commit()
+                print(f"[定时清理] 已删除 {cnt} 条超过1年的识别记录")
+                save_log("info", f"定时清理完成，已删除 {cnt} 条超过1年的识别记录")
+    except Exception as exc:
+        print(f"[定时清理] 清理失败: {exc}")
+        save_log("error", f"定时清理失败: {exc}")
+
+
+def _start_cleanup_scheduler() -> None:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_cleanup_expired_records, "cron", hour=3, minute=0, id="cleanup_expired")
+    scheduler.start()
+    print("[定时清理] 已启动，每天凌晨3:00执行")
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     model_path = resolve_model_path()
     if not model_path.exists():
         raise RuntimeError(f"模型文件不存在: {model_path}")
     get_model(model_path)
+    _start_cleanup_scheduler()
+    save_log("info", "模型服务启动完成")
 
 
 
@@ -366,6 +394,52 @@ async def config() -> dict[str, Any]:
         "default_iou_threshold": 0.45,
         "default_imgsz": 960,
     }
+
+
+def save_log(level: str, message: str, source: str = "backend") -> None:
+    """写入系统日志到数据库"""
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO system_logs (level, message, source) VALUES (%s, %s, %s)",
+                    (level, message[:500], source),
+                )
+                conn.commit()
+    except Exception as exc:
+        print(f"[日志写入失败] {exc}")
+
+
+@app.post("/api/logs")
+async def create_log(request: Request):
+    """前端日志写入"""
+    body = await request.json()
+    level = body.get("level", "info")
+    message = body.get("message", "")
+    if message:
+        save_log(level, message, source="frontend")
+    return {"ok": True}
+
+
+@app.get("/api/logs")
+async def get_logs(page: int = 1, page_size: int = 50):
+    """获取系统日志（分页）"""
+    page_size = min(page_size, 200)
+    offset = max(0, (page - 1) * page_size)
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) AS cnt FROM system_logs")
+                total = cursor.fetchone()["cnt"]
+                cursor.execute(
+                    "SELECT id, level, message, source, created_at "
+                    "FROM system_logs ORDER BY id DESC LIMIT %s OFFSET %s",
+                    (page_size, offset),
+                )
+                rows = cursor.fetchall()
+        return {"total": total, "page": page, "page_size": page_size, "logs": rows}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/predict-batch", response_model=BatchPredictResponse)
@@ -442,7 +516,8 @@ async def predict_batch(
             result = result.model_copy(update={"record_id": record_id, "watermark_label": wm_label})
             results.append(result)
             total_pigs += result.predicted_count
-        
+
+        save_log("success", f"批量识别完成: {len(files)} 张图片，共 {total_pigs} 头猪")
         return BatchPredictResponse(
             success=True,
             total_images=len(files),
@@ -450,10 +525,13 @@ async def predict_batch(
             results=results
         )
     except FileNotFoundError as exc:
+        save_log("error", f"识别失败: 模型文件不存在 - {exc}")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
+        save_log("error", f"识别失败: 参数错误 - {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        save_log("error", f"识别失败: {exc}")
         raise HTTPException(status_code=500, detail=f"推理失败: {exc}") from exc
 
 
@@ -627,6 +705,7 @@ async def create_farm(farm: PigFarmCreate) -> PigFarmDetailResponse:
                     (farm_id,),
                 )
                 new_farm = cursor.fetchone()
+                save_log("info", f"创建猪场: {farm.name}")
                 return PigFarmDetailResponse(
                     success=True,
                     data=PigFarmResponse(
@@ -706,6 +785,7 @@ async def delete_farm(farm_id: int) -> PigFarmMessageResponse:
 
                 cursor.execute("DELETE FROM pig_farms WHERE id = %s", (farm_id,))
                 conn.commit()
+                save_log("warn", f"删除猪场 (ID={farm_id})")
                 return PigFarmMessageResponse(
                     success=True, message="猪场删除成功"
                 )

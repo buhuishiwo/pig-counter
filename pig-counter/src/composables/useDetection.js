@@ -14,7 +14,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     for (const file of files) {
       const { valid, error } = validateImage(file)
       if (!valid) {
-        store.commit('ADD_LOG', { msg: `文件 ${file.name} 验证失败：${error}`, type: 'error' })
+        store.dispatch('addLog', { msg: `文件 ${file.name} 验证失败：${error}`, type: 'error' })
         return
       }
     }
@@ -26,7 +26,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
       const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
       previewUrls.push(dataURL)
       metas.push(meta)
-      store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+      store.dispatch('addLog', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
     }
     store.commit('SET_IMAGES', { files, previewUrls, metas })
   }
@@ -34,14 +34,14 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
   async function processFile(file) {
     const { valid, error } = validateImage(file)
     if (!valid) {
-      store.commit('ADD_LOG', { msg: error, type: 'error' })
+      store.dispatch('addLog', { msg: error, type: 'error' })
       return
     }
     const dataURL = await fileToDataURL(file)
     const dim = await getImageDimensions(dataURL)
     const meta = { name: file.name, size: formatFileSize(file.size), width: dim.width, height: dim.height }
     store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta })
-    store.commit('ADD_LOG', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
+    store.dispatch('addLog', { msg: '已加载：' + file.name + '（' + meta.size + '，' + meta.width + '×' + meta.height + '）', type: 'info' })
   }
 
   function clearImage() {
@@ -53,7 +53,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     } else {
       store.commit('CLEAR_IMAGE')
     }
-    store.commit('ADD_LOG', { msg: '已清除', type: 'info' })
+    store.dispatch('addLog', { msg: '已清除', type: 'info' })
   }
 
   function onTopFileChange(files) {
@@ -71,7 +71,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     const selectedFarmId = store.state.selectedFarmId
     if ((!hasImage && !batchTree?.value) || isAnalyzing || !selectedFarmId) return
     if (!store.state.serviceOnline) {
-      store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
+      store.dispatch('addLog', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
       showNotify('error', '服务不可用', '后端服务离线，无法识别图片')
       return
     }
@@ -97,7 +97,7 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
     }
 
     const imageFiles = store.state.imageFiles.length > 0 ? store.state.imageFiles : [store.state.imageFile]
-    store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
+    store.dispatch('addLog', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
     showToastWithProgress('正在识别图片...', 'toast-info')
 
     try {
@@ -129,24 +129,24 @@ export function useDetection({ showNotify, showToastWithProgress, updateToastPro
         setTimeout(() => {
           showNotify('success', '识别完成', `${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`)
         }, 500)
-        store.commit('ADD_LOG', { msg: `识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, type: 'success' })
+        store.dispatch('addLog', { msg: `识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, type: 'success' })
       } else {
         store.commit('SET_RESULT', result)
         if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
         setTimeout(() => {
           showNotify('success', '识别完成', `检测到 ${result.count} 头猪`)
         }, 500)
-        store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
-        store.commit('ADD_LOG', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
+        store.dispatch('addLog', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+        store.dispatch('addLog', { msg: '置信度 ' + Math.round(result.confidence * 100) + '%' + (result.inferenceTime ? '  耗时 ' + result.inferenceTime + 'ms' : ''), type: 'success' })
       }
       await loadDetectionStats()
     } catch (err) {
       stopSimProgress()
       const isCancel = err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED' || (err.message && err.message.toLowerCase().includes('cancel'))
       if (isCancel) {
-        store.commit('ADD_LOG', { msg: '识别已取消', type: 'info' })
+        store.dispatch('addLog', { msg: '识别已取消', type: 'info' })
       } else {
-        store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' })
+        store.dispatch('addLog', { msg: '识别失败：' + err.message, type: 'error' })
         showNotify('error', '识别失败', err.message)
       }
     } finally {

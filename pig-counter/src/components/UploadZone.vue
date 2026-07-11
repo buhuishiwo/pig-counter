@@ -81,7 +81,7 @@ export default {
     async processFile(file) {
       const { valid, error } = validateImage(file)
       if (!valid) {
-        this.$store.commit('ADD_LOG', { msg: error, type: 'error' })
+        this.$store.dispatch('addLog', { msg: error, type: 'error' })
         this.$emit('error', error)
         return
       }
@@ -96,13 +96,13 @@ export default {
           height: dimensions.height
         }
         this.$store.commit('SET_IMAGE', { file, previewUrl: dataURL, meta })
-        this.$store.commit('ADD_LOG', {
+        this.$store.dispatch('addLog', {
           msg:  `已加载：${file.name}（${meta.size}，${meta.width}×${meta.height}）`,
           type: 'info'
         })
         this.$emit('loaded', { file, meta })
       } catch (err) {
-        this.$store.commit('ADD_LOG', { msg: `图片加载失败：${err.message}`, type: 'error' })
+        this.$store.dispatch('addLog', { msg: `图片加载失败：${err.message}`, type: 'error' })
       }
     }
   }

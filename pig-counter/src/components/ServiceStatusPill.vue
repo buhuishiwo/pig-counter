@@ -37,7 +37,7 @@ export default {
       try {
         const online = await checkHealth()
         this.$store.commit('SET_SERVICE_STATUS', online)
-        this.$store.commit('ADD_LOG', {
+        this.$store.dispatch('addLog', {
           msg: online ? '服务在线' : '服务未响应（Mock 模式）',
           type: online ? 'success' : 'warn'
         })

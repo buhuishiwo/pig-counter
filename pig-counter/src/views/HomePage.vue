@@ -248,7 +248,7 @@ export default {
       editDrawEnd.value = null
       editHint.value = 'select'
       showEditModal.value = true
-      store.commit('ADD_LOG', { msg: '已进入编辑模式', type: 'info' })
+      store.dispatch('addLog', { msg: '已进入编辑模式', type: 'info' })
     }
 
     function closeEditModal() {
@@ -258,7 +258,7 @@ export default {
       editSelectedIndex.value = null
       editImageUrl.value = null
       editHint.value = 'select'
-      store.commit('ADD_LOG', { msg: '已退出编辑模式', type: 'info' })
+      store.dispatch('addLog', { msg: '已退出编辑模式', type: 'info' })
     }
 
     function onEditImgLoad() {
@@ -362,7 +362,7 @@ export default {
       editBoxes.value.push({ x1, y1, x2, y2, score: 1.0, class_name: 'pig' })
       editSelectedIndex.value = editBoxes.value.length - 1
       drawEditCanvas()
-      store.commit('ADD_LOG', { msg: `已添加新识别框 #${editBoxes.value.length}`, type: 'info' })
+      store.dispatch('addLog', { msg: `已添加新识别框 #${editBoxes.value.length}`, type: 'info' })
     }
     function onEditCanvasClick(e) {
       if (editMode.value !== 'delete') return
@@ -375,7 +375,7 @@ export default {
       }
       if (clicked !== null) {
         editBoxes.value.splice(clicked, 1); editSelectedIndex.value = null; drawEditCanvas()
-        store.commit('ADD_LOG', { msg: '已删除识别框', type: 'info' })
+        store.dispatch('addLog', { msg: '已删除识别框', type: 'info' })
       }
     }
 
@@ -390,7 +390,7 @@ export default {
         try { const r = await (await import('@/api/detectionApi')).getDetectionRecords({ page: 1, page_size: 1 }); if (r?.data?.length > 0) editRecordId.value = r.data[0].id } catch (_) {}
       }
       if (!editRecordId.value) {
-        store.commit('ADD_LOG', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
+        store.dispatch('addLog', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
         farmState.showNotify?.('error', '保存失败', '无 recordId，请先重新识别'); return
       }
       try {
@@ -421,13 +421,13 @@ export default {
           if (res.annotated_image) { updated.annotatedImage = res.annotated_image; farmState._latestAnnotatedImage = res.annotated_image }
           store.commit('SET_RESULT', updated)
         }
-        store.commit('ADD_LOG', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
+        store.dispatch('addLog', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
         farmState.showNotify?.('success', '保存成功', `已更新 ${editBoxes.value.length} 个识别框`)
         const boxesSnapshot = JSON.parse(JSON.stringify(editBoxes.value))
         closeEditModal()
         nextTick(() => { nextTick(() => { if (resultCard.value) resultCard.value.drawBoxesAnimated(boxesSnapshot) }) })
       } catch (e) {
-        store.commit('ADD_LOG', { msg: '保存失败：' + e.message, type: 'error' })
+        store.dispatch('addLog', { msg: '保存失败：' + e.message, type: 'error' })
         farmState.showNotify?.('error', '保存失败', e.message)
       }
     }
@@ -450,7 +450,7 @@ export default {
           baseName = imageMeta.value.name.replace(/\.[^.]+$/, '')
         }
         link.download = `${baseName}_标注结果.png`; link.href = c.toDataURL('image/png'); link.click()
-        store.commit('ADD_LOG', { msg: '已导出标注图片', type: 'success' })
+        store.dispatch('addLog', { msg: '已导出标注图片', type: 'success' })
       }
       img.src = src
     }
@@ -484,7 +484,7 @@ export default {
     async function runSingleAnalysis() {
       if (!hasImage.value || isAnalyzing.value || !selectedFarmId.value) return
       if (!store.state.serviceOnline) {
-        store.commit('ADD_LOG', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
+        store.dispatch('addLog', { msg: '⚠️ 后端服务离线，无法识别图片', type: 'error' })
         farmState.showNotify?.('error', '服务不可用', '后端服务离线，无法识别图片')
         return
       }
@@ -492,7 +492,7 @@ export default {
       store.commit('SET_PROGRESS', 0)
       const { analyzeImage } = await import('@/api/pigModel')
       const imageFiles = store.state.imageFiles.length > 0 ? store.state.imageFiles : [store.state.imageFile]
-      store.commit('ADD_LOG', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
+      store.dispatch('addLog', { msg: `发送 ${imageFiles.length} 张图片至数猪大模型…`, type: 'info' })
       try {
         const result = await analyzeImage(imageFiles, (p) => {
           store.commit('SET_PROGRESS', p)
@@ -502,21 +502,21 @@ export default {
           if (!window.__modelOriginalCount) window.__modelOriginalCount = result.totalPigs
           store.commit('SET_PROGRESS', 100)
           setTimeout(() => farmState.showNotify?.('success', '识别完成', `${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`), 500)
-          store.commit('ADD_LOG', { msg: `识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, type: 'success' })
+          store.dispatch('addLog', { msg: `识别完成：${result.totalImages} 张图片，共检测到 ${result.totalPigs} 头猪`, type: 'success' })
         } else {
           store.commit('SET_RESULT', result)
           if (!window.__modelOriginalCount) window.__modelOriginalCount = result.count
           store.commit('SET_PROGRESS', 100)
           setTimeout(() => farmState.showNotify?.('success', '识别完成', `检测到 ${result.count} 头猪`), 500)
-          store.commit('ADD_LOG', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
+          store.dispatch('addLog', { msg: '识别完成：检测到 ' + result.count + ' 头猪', type: 'success' })
         }
         await farmState.loadDetectionStats?.()
       } catch (err) {
         const isCancel = err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED'
         if (isCancel) {
-          store.commit('ADD_LOG', { msg: '识别已取消', type: 'info' })
+          store.dispatch('addLog', { msg: '识别已取消', type: 'info' })
         } else {
-          store.commit('ADD_LOG', { msg: '识别失败：' + err.message, type: 'error' })
+          store.dispatch('addLog', { msg: '识别失败：' + err.message, type: 'error' })
           farmState.showNotify?.('error', '识别失败', err.message)
         }
       } finally {

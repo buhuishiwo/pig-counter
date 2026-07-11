@@ -86,7 +86,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     batchTree.value = tree
     batchResults.value = null
     store.commit('CLEAR_IMAGE')
-    store.commit('ADD_LOG', { msg: `已加载文件夹: ${tree.batchName}（${tree.totalFiles} 张，${tree.unitCount} 单元）`, type: 'info' })
+    store.dispatch('addLog', { msg: `已加载文件夹: ${tree.batchName}（${tree.totalFiles} 张，${tree.unitCount} 单元）`, type: 'info' })
     if (e.target) e.target.value = ''
   }
 
@@ -160,13 +160,13 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         }, 50)
       })
       closeNotify()
-      store.commit('ADD_LOG', { msg: `批次检测完成: ${batchResults.value.total_pigs} 头猪`, type: 'info' })
+      store.dispatch('addLog', { msg: `批次检测完成: ${batchResults.value.total_pigs} 头猪`, type: 'info' })
       loadBatchFullImages()
     } catch (e) {
       stopSimProgress()
       if (e.name === 'AbortError') {
         closeNotify()
-        store.commit('ADD_LOG', { msg: '批量检测已取消', type: 'info' })
+        store.dispatch('addLog', { msg: '批量检测已取消', type: 'info' })
         if (prevBatchResults) {
           batchResults.value = prevBatchResults
           batchImageIndex.value = prevBatchImageIndex
@@ -174,7 +174,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       } else {
         closeNotify()
         showNotify('error', '批量检测失败', e.message || '请重试')
-        store.commit('ADD_LOG', { msg: '批次检测失败: ' + e.message, type: 'error' })
+        store.dispatch('addLog', { msg: '批次检测失败: ' + e.message, type: 'error' })
       }
     } finally {
       stopSimProgress()

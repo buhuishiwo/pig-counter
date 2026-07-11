@@ -24,20 +24,20 @@ export function useFarm({ showNotify, loadDetectionStats }) {
       const response = await getFarms()
       if (response.success) {
         farms.value = response.data
-        store.commit('ADD_LOG', { msg: `已加载 ${farms.value.length} 个猪场`, type: 'info' })
+        store.dispatch('addLog', { msg: `已加载 ${farms.value.length} 个猪场`, type: 'info' })
         if (farms.value.length === 0) {
           showNotify('info', '提示', '第一次使用请先创建养殖场')
         }
       }
     } catch (err) {
-      store.commit('ADD_LOG', { msg: '加载猪场列表失败：' + err.message, type: 'error' })
+      store.dispatch('addLog', { msg: '加载猪场列表失败：' + err.message, type: 'error' })
     }
   }
 
   async function onFarmChange() {
     const farm = farms.value.find(f => f.id === store.state.selectedFarmId)
     if (farm) {
-      store.commit('ADD_LOG', { msg: `已选择猪场：${farm.name}`, type: 'info' })
+      store.dispatch('addLog', { msg: `已选择猪场：${farm.name}`, type: 'info' })
     }
     await loadDetectionStats()
   }

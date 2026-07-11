@@ -26,6 +26,9 @@
 export default {
   name: 'LogPanel',
   computed: { logs() { return this.$store.getters.recentLogs } },
+  mounted() {
+    this.$store.dispatch('loadLogs')
+  },
   methods: { clearLogs() { this.$store.commit('CLEAR_LOGS') } }
 }
 </script>
