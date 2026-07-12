@@ -9,7 +9,9 @@
             <span class="log-tip-text">记录近 7 天的识别操作与系统事件，超出自动清理</span>
           </template>
           <span class="log-tip-trigger">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+            </svg>
           </span>
         </a-popover>
       </div>
@@ -62,7 +64,24 @@ export default {
 }
 .log-clear:hover { color: #ff3b30; background: rgba(255,59,48,0.08); }
 
-.log-tip-trigger { display: flex; align-items: center; cursor: default; margin-left: -2px; }
+.log-tip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #c7c7cc;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+  margin-left: -2px
+}
+
+.log-tip-trigger:hover {
+  color: var(--accent);
+  background: rgba(0, 122, 255, 0.08)
+}
 
 .log-body {
   padding: 10px 16px; max-height: 160px; overflow-y: auto;
