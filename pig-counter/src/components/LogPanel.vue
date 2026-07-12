@@ -75,7 +75,8 @@ export default {
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
   flex-shrink: 0;
-  margin-left: -2px
+  margin-left: -6px;
+  margin-top: 1px
 }
 
 .log-tip-trigger:hover {
