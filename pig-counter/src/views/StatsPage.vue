@@ -170,6 +170,16 @@
         <div class="section-header-left">
           <span class="section-dot section-dot--green"></span>
           <span class="section-title">识别结果回看</span>
+          <a-popover trigger="hover" placement="bottom" overlay-class-name="retention-tip-popover">
+            <template #content>
+              <div style="white-space:nowrap;font-size:12px;line-height:1.6;padding:4px 0">历史识别结果保存周期为 1 年，超出保存期限的数据将自动删除</div>
+            </template>
+            <span class="retention-tip-trigger">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+              </svg>
+            </span>
+          </a-popover>
           <span class="total-badge" v-if="galleryTotal > 0">共 {{ galleryTotal }} 条</span>
         </div>
       </div>
@@ -200,10 +210,13 @@
           </div>
         </div>
         <div class="filter-group filter-group--search">
-          <input class="filter-input" v-model="filterKeyword" placeholder="搜索文件名…" @keyup.enter="onKeywordSearch" />
-          <button class="filter-search-btn" @click="onKeywordSearch">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </button>
+          <a-input-search
+            v-model:value="filterKeyword"
+            placeholder="搜索文件名…"
+            allowClear
+            style="max-width:220px"
+            @search="onKeywordSearch"
+          />
         </div>
         <div class="filter-group filter-group--time">
           <button v-for="r in [{k:'today',l:'今天'},{k:'week',l:'本周'},{k:'month',l:'本月'},{k:'all',l:'全部'}]"
@@ -480,13 +493,16 @@
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler } from 'chart.js'
 import { getStatsByFarm, getDetectionStats, getDetectionRecordsWithImages, getTimeSeriesStats } from '@/api/statsApi'
 import { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn } from '@lucide/vue'
+import { Popover, Input } from 'ant-design-vue'
+import 'ant-design-vue/es/popover/style'
+import 'ant-design-vue/es/input/style'
 
 // 按需注册 Chart.js 组件（仅 Line 图表所需）
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler)
 
 export default {
   name: 'StatsPage',
-  components: { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn },
+  components: { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn, APopover: Popover, AInputSearch: Input.Search },
 
   data() {
     return {
@@ -1434,6 +1450,7 @@ export default {
   gap: 6px
 }
 .filter-group--search {
+  position: relative;
   max-width: 220px;
   margin-left: 0
 }
@@ -1706,6 +1723,25 @@ export default {
   transition: all 0.15s
 }
 .filter-search-btn:hover { background: white; border-color: var(--blue); color: var(--blue) }
+.filter-input-clear {
+  position: absolute;
+  right: 38px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.08);
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s
+}
+.filter-input-clear:hover { background: rgba(0,0,0,0.15); color: var(--text-2) }
 .filter-clear-btn {
   padding: 5px 14px;
   border-radius: 7px;
@@ -1733,7 +1769,7 @@ export default {
 .filter-date-sep { font-size: 13px; color: var(--text-4) }
 
 /* ====== 图片回看网格 ====== */
-.gallery-section { animation-delay: 0.3s; }
+.gallery-section { animation-delay: 0.3s; overflow: visible }
 
 .gallery-grid {
   display: grid;
@@ -2256,4 +2292,25 @@ export default {
   from { opacity: 0; transform: translateX(-50%) translateY(-100%) scale(0.95); }
   to { opacity: 1; transform: translateX(-50%) translateY(-100%) scale(1); }
 }
+
+.retention-tip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #c7c7cc;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+  margin-left: -10px
+}
+.retention-tip-trigger:hover {
+  color: var(--accent);
+  background: rgba(0, 122, 255, 0.08)
+}
+</style>
+<style>
+.retention-tip-popover .ant-popover-inner { padding: 8px 12px }
 </style>

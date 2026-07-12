@@ -141,6 +141,9 @@ export default createStore({
       state.logs.unshift({ id: ++_logSeq, time: getTimeString(), msg, type })
       if (state.logs.length > 50) state.logs.pop()
     },
+    SET_LOGS(state, logs) {
+      state.logs = logs
+    },
     CLEAR_LOGS(state) {
       state.logs = []
     },
@@ -165,29 +168,19 @@ export default createStore({
         })
       } catch (_) { /* 静默 */ }
     },
-    async loadLogs({ state }) {
+    async loadLogs({ commit }) {
       try {
         const res = await fetch('/api/logs?page=1&page_size=50')
         if (!res.ok) return
         const data = await res.json()
         if (!data.logs?.length) return
-        // 合并：后端持久化日志追加到本地日志尾部（本地日志优先显示）
         const backendLogs = data.logs.map(r => ({
           id: r.id + 100000,
           time: r.created_at?.replace(/^\d{4}-\d{2}-\d{2}T/, '').replace(/Z$/, '').slice(0, 8) || '',
           msg: r.message,
           type: r.level
         }))
-        // 用后端日志填充本地日志的空位（最多保留50条）
-        const existing = state.logs
-        const merged = [...existing]
-        for (const bl of backendLogs) {
-          if (merged.length >= 50) break
-          if (!merged.some(l => l.msg === bl.msg && l.time === bl.time)) {
-            merged.push(bl)
-          }
-        }
-        state.logs = merged.slice(0, 50)
+        commit('SET_LOGS', backendLogs.slice(0, 50))
       } catch (_) { /* 静默 */ }
     }
   }
