@@ -75,7 +75,7 @@ export default {
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
   flex-shrink: 0;
-  margin-left: -6px;
+  margin-left: -8px;
   margin-top: 1px
 }
 
