@@ -85,7 +85,7 @@ export default {
 }
 
 .log-body {
-  padding: 10px 16px; max-height: 200px; overflow-y: auto;
+  padding: 10px 16px; max-height: 190px; overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: #d1d1d6 transparent;
 }
 .log-body::-webkit-scrollbar { width: 3px; }

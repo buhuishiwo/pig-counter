@@ -25,7 +25,7 @@ export default {
   gap: 8px;
   font-size: 12px;
   color: var(--text-4);
-  margin-top: -20px
+  margin-top: -40px
 }
 
 .footer-brand {
