@@ -4,6 +4,14 @@
       <div class="log-header-left">
         <span class="log-dot"></span>
         <span class="log-title">系统日志</span>
+        <a-popover trigger="hover" placement="right" overlay-class-name="log-tip-popover">
+          <template #content>
+            <span class="log-tip-text">记录近 7 天的识别操作与系统事件，超出自动清理</span>
+          </template>
+          <span class="log-tip-trigger">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aeaeb2" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          </span>
+        </a-popover>
       </div>
       <button class="log-clear" @click="clearLogs" title="清空">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -23,8 +31,11 @@
 </template>
 
 <script>
+import { Popover } from 'ant-design-vue'
+
 export default {
   name: 'LogPanel',
+  components: { APopover: Popover },
   computed: { logs() { return this.$store.getters.recentLogs } },
   mounted() {
     this.$store.dispatch('loadLogs')
@@ -50,6 +61,8 @@ export default {
   transition: all 0.15s; display: flex; align-items: center; justify-content: center;
 }
 .log-clear:hover { color: #ff3b30; background: rgba(255,59,48,0.08); }
+
+.log-tip-trigger { display: flex; align-items: center; cursor: default; margin-left: -2px; }
 
 .log-body {
   padding: 10px 16px; max-height: 160px; overflow-y: auto;
@@ -79,4 +92,9 @@ export default {
 .log-in-leave-active { transition: all 0.2s ease; }
 .log-in-enter-from { opacity: 0; transform: translateY(-6px); }
 .log-in-leave-to { opacity: 0; transform: translateY(-4px); }
+</style>
+
+<style>
+.log-tip-popover .ant-popover-inner { padding: 6px 10px; }
+.log-tip-text { font-size: 12px; color: #6e6e73; white-space: nowrap; }
 </style>

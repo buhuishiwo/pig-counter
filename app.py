@@ -336,18 +336,23 @@ async def validation_exception_handler(request, exc):
 
 
 def _cleanup_expired_records() -> None:
-    """删除超过1年的识别记录及关联水印数据"""
+    """删除超过1年的识别记录及超过7天的系统日志"""
     try:
         with get_db() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT COUNT(*) AS cnt FROM detection_records WHERE created_at < NOW() - INTERVAL 1 YEAR")
                 cnt = cursor.fetchone()["cnt"]
-                if cnt == 0:
-                    return
-                cursor.execute("DELETE FROM detection_records WHERE created_at < NOW() - INTERVAL 1 YEAR")
-                conn.commit()
-                print(f"[定时清理] 已删除 {cnt} 条超过1年的识别记录")
-                save_log("info", f"定时清理完成，已删除 {cnt} 条超过1年的识别记录")
+                if cnt > 0:
+                    cursor.execute("DELETE FROM detection_records WHERE created_at < NOW() - INTERVAL 1 YEAR")
+                    conn.commit()
+                    print(f"[定时清理] 已删除 {cnt} 条超过1年的识别记录")
+                    save_log("info", f"定时清理完成，已删除 {cnt} 条超过1年的识别记录")
+                cursor.execute("SELECT COUNT(*) AS cnt FROM system_logs WHERE created_at < NOW() - INTERVAL 7 DAY")
+                log_cnt = cursor.fetchone()["cnt"]
+                if log_cnt > 0:
+                    cursor.execute("DELETE FROM system_logs WHERE created_at < NOW() - INTERVAL 7 DAY")
+                    conn.commit()
+                    print(f"[定时清理] 已删除 {log_cnt} 条超过7天的系统日志")
     except Exception as exc:
         print(f"[定时清理] 清理失败: {exc}")
         save_log("error", f"定时清理失败: {exc}")
@@ -423,17 +428,17 @@ async def create_log(request: Request):
 
 @app.get("/api/logs")
 async def get_logs(page: int = 1, page_size: int = 50):
-    """获取系统日志（分页）"""
+    """获取近7天系统日志（分页）"""
     page_size = min(page_size, 200)
     offset = max(0, (page - 1) * page_size)
     try:
         with get_db() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) AS cnt FROM system_logs")
+                cursor.execute("SELECT COUNT(*) AS cnt FROM system_logs WHERE created_at >= NOW() - INTERVAL 7 DAY")
                 total = cursor.fetchone()["cnt"]
                 cursor.execute(
                     "SELECT id, level, message, source, created_at "
-                    "FROM system_logs ORDER BY id DESC LIMIT %s OFFSET %s",
+                    "FROM system_logs WHERE created_at >= NOW() - INTERVAL 7 DAY ORDER BY id DESC LIMIT %s OFFSET %s",
                     (page_size, offset),
                 )
                 rows = cursor.fetchall()
