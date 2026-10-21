@@ -176,7 +176,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 |:-------|:---|:-----|
 | 最大上传体积 | 500M | `nginx.conf` → `client_max_body_size` |
 | API 超时 | 600s | `nginx.conf` → `proxy_read_timeout` |
-| MySQL 时区 | **UTC**（未设 `TZ`，宿主机为 CST，相差 8 小时） | `docker-compose.yml` |
+| MySQL 时区 | Asia/Shanghai | `docker-compose.yml` → mysql 容器 `TZ` 环境变量 |
 | ONNX 模型路径 | `model/pig_count.onnx` | 环境变量 `PIG_MODEL_PATH` |
 | 数据库密码 | `pig_counterMysql` | `docker-compose.yml` / `Dockerfile` 默认值 |
 | 水印 OCR 密钥 | 宿主 `.env` 的 `OCR_API_KEY` | `docker-compose.yml` → `environment` |
@@ -194,4 +194,4 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 
 当前版本：**v2.0**（部署分支 `main`）
 
-> 已知问题：MySQL 容器跑在 UTC，`detection_records.created_at` 由 `CURRENT_TIMESTAMP` 生成，统计接口用 `DATE(created_at) = CURDATE()`，因此「今日」的日界是北京时间 08:00 而非 00:00。
+> 时间说明：`created_at` 均为 MySQL `TIMESTAMP`，内部存 UTC，读时按会话时区换算。mysql 容器必须设 `TZ=Asia/Shanghai`（`docker-compose.yml` 已配），否则页面时间会早 8 小时、「今日」日界会错到北京时间 08:00。

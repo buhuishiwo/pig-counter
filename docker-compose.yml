@@ -9,6 +9,9 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=pig_counterMysql
       - MYSQL_DATABASE=pig_counter
+      # 时区必须为 Asia/Shanghai：created_at 为 TIMESTAMP，NOW()/CURDATE() 依赖会话时区，
+      # 默认 UTC 会导致页面时间早 8 小时、「今日」日界错到北京时间 08:00
+      - TZ=Asia/Shanghai
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql_init.sql:/docker-entrypoint-initdb.d/init.sql
