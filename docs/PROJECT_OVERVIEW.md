@@ -1,7 +1,7 @@
 # 项目总览：智慧猪群识别系统 (Pig Count)
 
-**版本**: v0.3
-**最后更新**: 2026-05-31
+**版本**: v0.4
+**最后更新**: 2026-10-21
 
 ---
 
@@ -15,34 +15,40 @@ AI 驱动的猪只计数系统。用户上传猪群图片 → ONNX 模型检测 
 
 | 层级 | 技术 | 说明 |
 |---|---|---|
-| 后端框架 | FastAPI (Python 3.11) + Uvicorn | REST API，单文件 `app.py` |
+| 后端框架 | FastAPI (Python 3.11) + Uvicorn | REST API，单文件 `backend/app.py`（约 75KB，待拆分） |
 | 推理引擎 | OpenCV DNN (`cv2.dnn`) | CPU 推理，ONNX 模型 |
-| 模型 | `model/pig_count.onnx` (11MB) | YOLO 系列单阶段检测器 |
-| OCR | PaddleOCR (本地) + qwen-vl-ocr (API) | 保留但不再用于身份识别；目录结构替代 |
-| 数据库 | MySQL 8.0 | 本地运行，库名 `pig_counter` |
-| 前端 | **Vue 3** + Vite + Vuex + Vue Router + Chart.js + Ant Design Vue | SPA，2 个页面 |
-| 反向代理 | Nginx (alpine) | `/` → dist/，`/api/` → backend:8866 |
-| 容器化 | Docker + Docker Compose | mysql + backend + nginx（当前 Docker 异常，本地直接运行） |
-| Excel 导出 | openpyxl | 按甲方模板导出批量识别结果，含图片嵌入 |
+| 模型 | `backend/model/pig_count.onnx` (11MB) | YOLO 系列单阶段检测器 |
+| OCR | qwen-vl-ocr（阿里 DashScope API） | `backend/watermark_ocr.py` 用 httpx 直连；**旧 PaddleOCR 混合架构已废弄（`ocr.py` 已删除，相关依赖已移除）** |
+| 数据库 | MySQL 8.0（容器内，时区 Asia/Shanghai） | 库名 `pig_counter`，4 张表：detection_records / pig_farms / watermark_data / system_logs |
+| 前端 | **Vue 3** + Vite + Vuex + Vue Router + Chart.js + Ant Design Vue | SPA，2 个页面，源码在 `frontend/` |
+| 反向代理 | Nginx (`nginx:latest`) | `/` → dist/，`/api/` → backend:8866 |
+| 容器化 | Docker + Docker Compose | 三容器已在生产运行：nginx / backend / mysql |
+| 日志 | system_logs 表 + apscheduler | 保留 7 天自动清理，每天凌晨 3:00 |
+| Excel 导出 | openpyxl | 按 `backend/excel_template_v2.xlsx` 导出，含图片嵌入 |
 
 ---
 
 ## 当前运行方式
 
-Docker 当前异常不可用，改为本地直接运行：
+### 生产（远程服务器，Docker）
+
+服务器：`root@47.110.63.70`，目录 `/opt/pig-counter/pig-counter`，访问 `http://47.110.63.70:8888`。
+
+三容器：`pig-count-nginx`（唯一对外端口 8888）、`pig-count-backend`（`127.0.0.1:8866`）、`pig-count-mysql`（`127.0.0.1:3307`）。
+
+部署流程详见根目录 `README.md` 的「远程服务器」一节。
+
+### 本地开发
 
 ```bash
-# 后端
-cd /home/user/Workspace/PigCount/pig-counter
-source .venv/bin/activate
-python app.py          # 端口 8866
+# 后端（依赖仓库根的 .env）
+cd backend
+pip install -r requirements.txt
+python app.py                 # http://localhost:8866
 
 # 前端
-cd /home/user/Workspace/PigCount/pig-counter/frontend
-npm run dev            # Vite，端口 5173
-
-# MySQL
-sudo mysql -u root     # 密码 pig_counterMysql，库 pig_counter
+cd frontend
+npm install && npm run dev    # http://localhost:5173
 ```
 
 ---
@@ -273,8 +279,9 @@ pig-counter/                   # 仓库根 = 部署根
 
 ## 已知问题
 
-1. **Docker 异常** — 当前 Docker 服务不可用，改为本地直接运行
-2. **detection_records 不存检测框** — 只存了缩略图，不存原始 detection box 坐标
-3. **node_modules/.cache 已提交 git** — commit `e0e97af1` 含 ESLint 缓存
-4. **模型单线程推理** — 推理时持有 `_MODEL_LOCK`，不支持并发
-5. **README.md 过时** — 引用了不存在的 `/api/predict` 端点
+1. **`app.py` 单文件 75KB** — 后端全部代码集中在一个文件，待拆分为 routes/ services/
+2. **模型单线程推理** — 推理时持有 `_MODEL_LOCK`，不支持并发
+3. **`detection_records` 不存检测框** — 只存缩略图与 boxes JSON，前端框编辑未实现
+4. **数据库无备份机制** — 数据仅存于 Docker 命名卷 `pig-counter_mysql_data`
+5. **`OCR_API_KEY` 未轮换** — 明文存于服务器 `.env` 与容器环境变量
+6. **仓库历史偏大（72MB）** — 早期的 `node_modules/` 与 `dist/` 已从最新提交移除，但仍留在历史中

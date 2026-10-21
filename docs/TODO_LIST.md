@@ -1,6 +1,6 @@
 # TODO_LIST — 智慧猪群识别系统
 
-**最后更新**: 2026-05-31
+**最后更新**: 2026-10-21
 
 ---
 
@@ -49,12 +49,17 @@ UI 精调 ──→  布局对齐 + 动画平滑 + 状态机完善
 
 ## 待处理任务
 
-### 优先级 P1（用户体验）
+### 优先级 P0（迁移阻塞项）
 
-- [ ] **Docker 服务恢复** — 当前 Docker 异常，本地运行正常，恢复后需验证全栈部署
-  - 文件：Dockerfile, docker-compose.yml
-- [ ] **ESLint 缓存清理** — commit `e0e97af1` 含 node_modules/.cache，需加 .gitignore + git rm --cached
-  - 文件：.gitignore
+- [ ] **迁移到客户内网新服务器** — 目标系统待甲方确认（可选 Ubuntu 22.04 LTS 或 Windows Server 2022），详见 `MIGRATION_PLAN.md`
+- [ ] **数据库备份** — 目前无任何 dump，2500 条记录 + 655MB 历史图片仅存于 Docker 命名卷
+- [ ] **`OCR_API_KEY` 轮换** — 明文存于服务器 `.env` 与容器环境变量
+
+### 优先级 P1（运维健壮性）
+
+- [x] ~~**Docker 服务恢复**~~ — 已于 2026-07 起用三容器正式部署，运行正常
+- [x] ~~**ESLint 缓存清理**~~ — 已于 2026-10 目录重构中一并清理（`node_modules/` 已全部出库）
+- [x] ~~**误提交的 node_modules/vue-router**~~ — 已 `git rm --cached` 并从工作区删除
 
 ### 优先级 P2（功能完善）
 
@@ -69,10 +74,11 @@ UI 精调 ──→  布局对齐 + 动画平滑 + 状态机完善
 
 ### 优先级 P3（技术债务）
 
-- [ ] **app.py 拆分** — 单文件 1500+ 行，考虑拆成 routes/ services/ models/
+- [ ] **backend/app.py 拆分** — 单文件 75KB，考虑拆成 routes/ services/ models/
 - [ ] **前端 API 层统一** — detectionApi.js 裸用 axios，与其他 API 层不一致
-- [ ] **README.md 更新** — 引用了不存在的 `/api/predict` 端点
-- [ ] **node_modules 体积** — .venv + node_modules 占用较大，考虑优化
+- [x] ~~**README.md 更新**~~ — 已按实测重写（部署流程、端口、时区、.env 机制）
+- [x] ~~**node_modules 体积**~~ — 已从仓库移除（`.venv`/`node_modules` 均已在 .gitignore）
+- [ ] **git 历史瘦身** — 历史中仍含早期 node_modules/dist（`.git` 约 72MB），可用 `git filter-repo` 处理，但会改写 SHA
 
 ### 优先级 P4（后续扩展）
 
@@ -86,13 +92,13 @@ UI 精调 ──→  布局对齐 + 动画平滑 + 状态机完善
 ## 开发顺序
 
 ```
-当前 ──→ P1: Docker 恢复 + ESLint 清理
+当前 ──→ P0: 迁移新服务器 + 数据库备份 + 密钥轮换
          │
          ├─→ P2: 文件树虚线 + 按钮统一 + 检测明细 + boxes 存储
          │
-         ├─→ P3: 代码拆分 + API 统一 + README
+         ├─→ P3: app.py 拆分 + API 层统一 + 历史瘦身
          │
-         └─→ P4: 框编辑 + OCR 验证 + 报表模板
+         └─→ P4: 框编辑 + 报表模板定制
 ```
 
 ---
@@ -101,10 +107,10 @@ UI 精调 ──→  布局对齐 + 动画平滑 + 状态机完善
 
 | 项 | 说明 | 优先级 |
 |---|---|---|
-| `app.py` 单文件 1500+ 行 | 多轮改造后更臃肿，考虑拆分 | P3 |
+| `backend/app.py` 单文件 75KB | 多轮改造后更臃肿，考虑拆分 | P3 |
 | 推理加锁串行 | `_MODEL_LOCK` 保护 forward，批量多图串行 | P3 |
-| `node_modules/.cache` 已提交 git | commit `e0e97af1` 含 320+ 缓存文件 | P1 |
 | 前端 API 层不统一 | `detectionApi.js` 裸用 axios | P3 |
-| README.md 过时 | 引用了不存在的 `/api/predict` | P3 |
-| Docker 不可用 | 当前本地运行，需恢复 Docker 环境 | P1 |
-| detection_records 不存 boxes | 只存缩略图，不存检测框坐标 | P2 |
+| git 历史偏大 | 历史含早期 node_modules/dist，`.git` 约 72MB | P3 |
+| detection_records 不存 boxes | 只存缩略图与 boxes JSON | P2 |
+| 数据库无备份 | 数据仅存于 Docker 命名卷 | P0 |
+| `_build_batch_excel` 无参数校验 | 前端 payload 缺字段时直接 500 而非 400 | P3 |

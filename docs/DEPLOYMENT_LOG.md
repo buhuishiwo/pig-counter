@@ -9,9 +9,9 @@
 | # | 日期 | 类别 | 标题 | 状态 |
 |---|---|---|---|---|
 | 1 | 2026-04-28 | 部署 | Docker Hub 网络不稳定，大镜像拉取 EOF | ✅ 已解决 |
-| 2 | 2026-04-28 | 构建 | npm build 产物 (dist/) 已提交到 git | ℹ️ 已知 |
-| 3 | 2026-04-28 | 代码 | ESLint 缓存文件误提交（commit e0e97af1） | ⚠️ 待处理 |
-| 4 | 2026-05-30 | 部署 | Docker 服务异常，无法启动容器 | ⚠️ 待处理 |
+| 2 | 2026-04-28 | 构建 | npm build 产物 (dist/) 已提交到 git | ✅ 已解决（dist/ 已不入库） |
+| 3 | 2026-04-28 | 代码 | ESLint 缓存文件误提交（commit e0e97af1） | ✅ 已解决（node_modules 全部出库） |
+| 4 | 2026-05-30 | 部署 | Docker 服务异常，无法启动容器 | ✅ 已解决（2026-07 起三容器正式部署） |
 | 5 | 2026-05-30 | 部署 | 本地 MySQL + 后端 + 前端替代 Docker 运行 | ✅ 已解决 |
 | 6 | 2026-05-28 | 前端 | Vue 2 → Vue 3 升级（Vite 替代 webpack） | ✅ 已完成 |
 | 7 | 2026-05-31 | 前端 | Ant Design Tree 白色背景补丁 | ✅ 已修复 |
@@ -21,6 +21,13 @@
 | 11 | 2026-05-31 | 前端 | 空状态容器留白过大 | ✅ 已修复 |
 | 12 | 2026-05-31 | 前端 | 警告横幅布局跳动（v-if → visibility 占位） | ✅ 已修复 |
 | 13 | 2026-05-31 | 前端 | 上传/清除图片时页面抖动 | ✅ 已修复 |
+| 14 | 2026-07-13 | 部署 | 生产切换为 Docker 三容器（nginx/backend/mysql） | ✅ 已完成 |
+| 15 | 2026-07-13 | 后端 | 水印 OCR 链路（qwen-vl-ocr）接入 + Excel 模板升级 | ✅ 已完成 |
+| 16 | 2026-07-13 | 后端 | system_logs 日志系统 + 7 天自动清理 | ✅ 已完成 |
+| 17 | 2026-10-21 | 运维 | MySQL 容器时区 UTC 导致时间早 8 小时、「今日」日界错位 | ✅ 已修复 |
+| 18 | 2026-10-21 | 安全 | backend/mysql 端口绑 0.0.0.0，仅靠安全组拦截 | ✅ 已修复 |
+| 19 | 2026-10-21 | 构建 | PaddleOCR 依赖已无引用，镜像 1.92GB → 946MB | ✅ 已完成 |
+| 20 | 2026-10-21 | 仓库 | 目录重构 backend/ + frontend/，清理 node_modules 与 Vue CLI 残留 | ✅ 已完成 |
 
 ---
 
@@ -248,3 +255,57 @@ WSL2 环境下 `docker compose up --build` 拉取 `mysql:8.0`（~500MB）频繁 
 3. 新 commit 提交变更
 
 状态：⚠️ 待处理
+
+---
+
+## Issue #17 — MySQL 时区导致时间偏移（2026-10-21）
+
+### 现象
+
+页面显示时间比实际早 8 小时；统计页「今日数据」的日界在北京时间 08:00 而非 00:00。
+
+### 根因
+
+mysql 容器默认 `TZ=UTC`，`created_at` 为 `TIMESTAMP` 且有 `DEFAULT CURRENT_TIMESTAMP`，
+而统计接口用 `DATE(created_at) = CURDATE()`，两者都按会话时区（UTC）计算。
+
+### 修复
+
+`docker-compose.yml` 的 mysql 服务增加 `TZ=Asia/Shanghai`。
+`TIMESTAMP` 内部存 UTC、读取时按会话时区换算，因此**历史数据自动纠正，无需迁移**。
+验证：同一记录修复前读 `2026-10-20 13:20:16`，修复后读 `2026-10-20 21:20:16`。
+
+状态：✅ 已修复
+
+---
+
+## Issue #18 — 端口暴露面过大（2026-10-21）
+
+### 现象
+
+`docker-compose.yml` 中 backend（8866）与 mysql（3307）均绑定 `0.0.0.0`，
+公网不可达仅依赖阿里云安全组，宿主机 iptables 无任何规则。
+
+### 修复
+
+改为 `127.0.0.1:8866:8866`、`127.0.0.1:3307:3306`。nginx 通过 `pig-count-network`
+访问 `backend:8866`，不依赖宿主端口映射。需要外部连库时走 SSH 隧道。
+
+状态：✅ 已修复
+
+---
+
+## Issue #20 — 仓库结构重构（2026-10-21）
+
+### 内容
+
+- 后端文件统一移入 `backend/`，Docker 构建上下文改为 `./backend`
+- 前端 `pig-counter/` 重命名为 `frontend/`
+- 移除误提交的 `node_modules/`（52 个 vue-router 文件）、Vue2 时代的根 `package.json`、
+  Vue CLI 残留（`vue.config.js`、`babel.config.js`）、冲突的 `public/index.html`
+- `delayed task.md` → `docs/KNOWN_ISSUES.md`
+- 跟踪文件 140 → 82 个
+
+验证：容器内 `/app/app.py`、模型与 Excel 模板路径均正确；首页、静态资源、统计接口全部正常。
+
+状态：✅ 已完成

@@ -1,6 +1,6 @@
 # HANDOVER_CONTEXT — 智慧猪群识别系统
 
-**最后更新**: 2026-05-31
+**最后更新**: 2026-10-21
 **维护者**: User + AI Agent
 
 ---
@@ -17,11 +17,24 @@ AI 猪只计数系统 — 上传猪舍图片 → ONNX 模型检测 → 标注图
 
 ## 当前阶段 / 进度
 
-- **阶段**: 前端 UI 精调 + 原型迁移收尾
-- **环境**: Docker 异常，本地直接运行（后端 uvicorn :8866，前端 Vite :5173，MySQL 本地）
-- **模型**: `pig_count.onnx` 已加载就绪
-- **Git**: `dev` 分支
-- **前端框架**: 已从 Vue 2 升级到 **Vue 3 + Vite**
+- **阶段**: 系统稳定运行中；**正在评估迁移到客户内网新服务器**（详见 `MIGRATION_PLAN.md`）
+- **环境**: Docker 三容器已在生产运行（nginx :8888 / backend :8866 / mysql :3307）
+- **模型**: `pig_count.onnx` 已加载就绪（容器内 `/app/model/`）
+- **Git**: 部署分支 `main`，本地开发分支 `dev`，两者与 origin 保持同步
+- **代码结构**: 2026-10-21 起已重构为 `backend/` + `frontend/` 两目录
+- **前端框架**: Vue 3 + Vite（Vue 2 已于 2026-05-28 升级）
+
+---
+
+## 2026-07 ~ 2026-10 进展（本阶段总结）
+
+1. ✅ **水印 OCR 链路** — `watermark_ocr.py` 接入 qwen-vl-ocr，栋舍/单元/栏号写入 `watermark_data` 表
+2. ✅ **生产级日志** — `system_logs` 表 + API + 前端日志面板，保留 7 天
+3. ✅ **时区修复** — mysql 容器补 `TZ=Asia/Shanghai`，修正时间早 8 小时与「今日」日界错位
+4. ✅ **端口收窄** — backend/mysql 改绑 `127.0.0.1`，公网仅开 8888
+5. ✅ **PaddleOCR 依赖移除** — `ocr.py` 删除，镜像 1.92GB → 946MB
+6. ✅ **目录重构 + 仓库清理** — `backend/` + `frontend/`；移除误提交的 `node_modules/`、Vue CLI 残留
+7. ⏳ **待办** — 迁移到新服务器、数据库备份、`OCR_API_KEY` 轮换
 
 ---
 
@@ -85,27 +98,28 @@ AI 猪只计数系统 — 上传猪舍图片 → ONNX 模型检测 → 标注图
 
 ## 留给下次的坑
 
-1. Docker 当前不可用，本地运行一切正常，但部署时需恢复 Docker
-2. ESLint 缓存已提交 git（commit `e0e97af1`），需要加 `.gitignore` 和清理
+1. 生产已改为 Docker 三容器部署（自 2026-07），Docker 异常不再存在；本地仍可直接起后端调试
+2. ESLint 缓存 / node_modules 入库已清理（2026-10 目录重构）
 3. 前端 Vue 3 升级后部分旧组件可能还有兼容性问题，需持续观察
 4. 原型迁移质量需用 Playwright + 图像理解持续验证
+5. 数据库无备份机制，且 `OCR_API_KEY` 未轮换（迁移前建议一并处理，见 `MIGRATION_PLAN.md`）
+6. git 历史中仍含早期 node_modules/dist，`.git` 约 72MB（待评估 `git filter-repo`）
 
 ---
 
 ## 启动 / 测试速查
 
 ```bash
-# 后端
-cd /home/user/Workspace/PigCount/pig-counter
-source .venv/bin/activate
+# 后端（依赖仓库根的 .env，app.py 会依次读 backend/.env 与仓库根 .env）
+cd /home/user/Workspace/PigCount/pig-counter/backend
 python app.py          # 端口 8866
 
 # 前端
 cd /home/user/Workspace/PigCount/pig-counter/frontend
 npm run dev            # Vite，端口 5173
 
-# MySQL
-sudo mysql -u root     # 密码 pig_counterMysql，库 pig_counter
+# 生产（Docker，服务器上）
+cd /opt/pig-counter/pig-counter && docker compose ps
 
 # 健康检查
 curl http://localhost:8866/api/health
