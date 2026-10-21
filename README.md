@@ -24,7 +24,6 @@ pig-counter/
 ├── mysql_init.sql          # 数据库初始化脚本（仅空数据卷首次启动时执行）
 ├── excel_template_v2.xlsx  # Excel 导出模板（app.py 实际读取的文件）
 ├── watermark_ocr.py        # 水印识别模块（app.py 第 21 行 import）
-├── ocr.py                  # 旧版 OCR 模块（仅 scripts/validate_ocr.py 使用）
 ├── requirements.txt        # Python 依赖
 ├── dist/                   # 前端构建产物（不入库，nginx 直接挂载）
 └── pig-counter/            # Vue 3 前端源码

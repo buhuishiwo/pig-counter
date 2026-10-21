@@ -52,7 +52,6 @@ sudo mysql -u root     # 密码 pig_counterMysql，库 pig_counter
 ```
 pig-counter/
 ├── app.py                     # FastAPI 全部后端代码（含批量上传、Excel 导出）
-├── ocr.py                     # 旧版 OCR 模块（仅 scripts/validate_ocr.py 使用）
 ├── watermark_ocr.py           # 水印识别模块（app.py 第 21 行 import，生产必倚）
 ├── requirements.txt           # Python 依赖
 ├── excel_template_v2.xlsx     # 甲方 Excel 导出模板（app.py 实际读取）

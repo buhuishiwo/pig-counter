@@ -78,7 +78,7 @@ UI 精调 ──→  布局对齐 + 动画平滑 + 状态机完善
 
 - [ ] **手动增删检测框** — Canvas 交互，点击框高亮/删除，拖拽添加新框
   - 依赖：detection_records 先存 boxes
-- [ ] **OCR 大规模验证** — 478 张图阈值校准，模块代码已就绪（ocr.py）
+- [x] ~~**OCR 大规模验证**~~ — 旧 PaddleOCR 混合架构已废弃（ocr.py 已移除），现走 watermark_ocr.py + qwen-vl-ocr
 - [ ] **报表格式定制** — 等待甲方提供新模板
 
 ---
