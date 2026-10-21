@@ -7,7 +7,7 @@
 | 项 | 内容 |
 |:---|:-----|
 | **项目概要** | AI 猪只计数系统：上传猪舍图片 → ONNX 检测 → 标注图 + 计数 + 统计看板 + Excel 报表。前端 Vue 3 + Vite，后端 FastAPI，MySQL，Docker Compose 三容器部署。代码结构 `backend/` + `frontend/` |
-| **当前阶段** | v2.0 稳定运行中；P6 迁移准备 — 等待甲方确认目标系统（Ubuntu 22.04 首选 / Windows Server 2022 次选） |
+| **当前阶段** | **v3.0** 稳定运行中；P6 迁移准备 — 等待甲方确认目标系统（Ubuntu 22.04 首选 / Windows Server 2022 次选） |
 | **最新变更** | 2026-10-21：目录重构 backend/+frontend/、mysql 时区修复（TZ=Asia/Shanghai）、端口收窄（8866/3307 绑 127.0.0.1）、PaddleOCR 依赖移除（镜像 1.92GB→946MB）、仓库清理（node_modules 出库）、全套文档对齐 |
 | **下次第一件事** | 等甲方回复目标系统版本；确定后按 `docs/MIGRATION_PLAN.md` 执行：先 `mysqldump` 全量导出（含 655MB 图片）→ 选 A/B/C 方案打包 → 目标机导入 → 跑迁移验证清单 |
 
@@ -23,7 +23,7 @@
 **SSH 方式**: `ssh root@47.110.63.70`（免密登录）
 **Git 远程**: HTTPS `https://github.com/buhuishiwo/pig-counter.git`（服务器无 SSH key；偶发 443 超时，重试即可）
 **数据库**: 库 `pig_counter`，用户 `root`，密码 `pig_counterMysql`，数据在 Docker 命名卷 `pig-counter_mysql_data`（**无备份**）
-**分支**: 本地 `dev` / `main`，部署分支 `main`，两者与 origin 同步
+**分支**: 只剩 `main`（`dev` 与两个 feature 分支已于 2026-10-21 清理）；tag：v0.3(local) / v1.0 / v2.0 / v3.0
 
 **本地启动速查**:
 
@@ -102,6 +102,13 @@ src/
 ---
 
 ## 历史
+
+### 2026-10-21 — 分支与版本治理
+
+- 删除冗余分支：`dev`（与 main 始终同一提交）、`feature/portrait-image-support`（旧结构快照）、`feature/box-modify`（已完全并入 main）；本地与远端同步清理，只剩 `main`
+- 版本号统一为 **v3.0** 并推送 tag（指向 2026-07-13 的水印 OCR + 日志系统发布提交 `5f10547a`）
+- 版本线记录：v0.3 原型期 → v1.0 核心功能 → v2.0 竖屏支持 → v3.0 水印OCR+日志
+- 文档体系去重：`docs/wheel/` 入库，每份文档只保留一处（详见 docs/README.md）
 
 ### 2026-10-21 — 迁移准备 + 目录重构 + 运维加固
 

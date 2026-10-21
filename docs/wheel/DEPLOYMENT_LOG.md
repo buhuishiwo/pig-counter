@@ -2,7 +2,7 @@
 
 **文档说明**: 记录项目落地过程中的关键里程碑、执行步骤、遇到的问题及解决方案。降低上下文切换成本，确保多轮次对话或人员更替时的无缝衔接。
 
-**当前状态**: v2.0 稳定运行中 — 已完成生产化与运维加固（时区/端口/依赖/目录结构），当前处于迁移准备阶段
+**当前状态**: v3.0 稳定运行中 — 已完成生产化与运维加固（时区/端口/依赖/目录结构），当前处于迁移准备阶段
 **最后更新**: 2026-10-21
 
 ---
@@ -184,3 +184,4 @@
 | 154 | 2026-10-21 | 清理 Windows 下载标记垃圾 | **发现**: 工作区混入 6 个 `*:Zone.Identifier` 文件，以及审计截图、废弃旧模板副本、旧 OCR 验证物料。**方案**: 全部删除，`.gitignore` 增加 `*:Zone.Identifier` 防复发；有信息价值的文档（AGENTS.md、USER_JOURNEY、EXECUTIVE_SUMMARY、KNOWN_ISSUES）转正入库。**实施**: 未跟踪文件 26 → 0。 | ✅ 已完成 |
 | 155 | 2026-10-21 | 服务器磁盘回收约 8GB | **发现**: 磁盘使用 83%（31G/40G），累积 6 个旧 backend 镜像（1.9~2.05GB）与大量构建缓存。**方案**: 采用保守清理，只删悬空镜像与构建缓存，保留带 tag 的旧镜像作回滚参照。**实施**: `docker image prune -f`（2.38GB）+ `docker builder prune -f`（5.53GB）；磁盘降至 60%（23G/40G），4 个容器全部正常。 | ✅ 已完成 |
 | 156 | 2026-10-21 | 迁移可行性评估：排除 Windows Server 2012 | **发现**: 客户内网新服务器为 Windows Server 2012，且仅提供向日葵远程（无 SSH）。**结论**: Docker Desktop 仅支持 Win10/11；Docker Engine 的 Windows 容器需 Server 2016+；Linux 容器需 WSL2（Server 2019+/Win10 2004+）；唯一出路 Hyper-V 套 Ubuntu VM 又依赖嵌套虚拟化，而该机极可能是虚拟机；原生部署受非 R2 只能 Python 3.8 限制（`numpy==2.2.6` 要求 ≥3.10）。**方案**: 向甲方提出换系统，首选 Ubuntu 22.04 LTS，次选 Windows Server 2022（桌面体验版）+ Hyper-V。**实施**: 结论与依据写入 `docs/MIGRATION_PLAN.md`，含四类迁移对象盘点（镜像/挂载/卷/密钥）、三种打包方案、传输通道与验证清单。 | ✅ 已交付 |
+| 157 | 2026-10-21 | 分支与版本治理 | **发现**: GitHub 有 4 个分支，其中 `dev` 与 main 始终是同一提交（每次发版都是 `git branch -f main dev` 后一并推送，从未独立存在）、`feature/box-modify` 已被 main 完全包含、`feature/portrait-image-support` 顶端是重构前的旧结构快照；同时本地存在未推送的 `v3.0` tag，与文档里的 v2.0 版本号矛盾。**方案**: 删除三个冗余分支（远端+本地）、推送 v3.0 tag、把文档版本统一到 v3.0，并记录版本线。**实施**: `git push origin --delete dev feature/box-modify feature/portrait-image-support`；`git push origin v3.0`；README/PROJECT_OVERVIEW/HANDOVER 版本号更新。恢复锚点：portrait=`835edbd7`、box-modify=`2b61a603`、dev=`c2bb0844`。 | ✅ 已完成 |
