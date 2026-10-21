@@ -133,6 +133,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 
 服务器上需自备 `.env`（含 `OCR_API_KEY`、`DB_PASSWORD`），它只被 `docker compose` 用于变量替换，不会进镜像、也不入库。
 
+> `git fetch` 偶尔会因为服务器到 GitHub 的 HTTPS 连接超时报错（实测出现过连续两次失败），重试即可。若持续不通，可在本地打 `git bundle` 后用 scp 传上去再 `git fetch <bundle>`。
+
 ## API 端点
 
 ### 检测
