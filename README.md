@@ -43,16 +43,19 @@ pig-counter/                       # 仓库根 = 部署根
 
 ## 文档索引
 
+完整导航与「每份文档该在哪里更新」的规则见 [`docs/README.md`](docs/README.md)。
+
 | 文档 | 内容 |
 |:--|:--|
 | `README.md`（本文件） | 项目概览、本地开发、Docker 部署、远程发版流程、API 端点、关键配置 |
 | `docs/PROJECT_OVERVIEW.md` | 技术栈、目录结构、业务逻辑总览、已知问题 |
-| `docs/HANDOVER_CONTEXT.md` | 交接上下文与阶段进展（含 2026-07~10 变更） |
+| `docs/wheel/HANDOVER_CONTEXT.md` | 交接上下文与阶段进展（30 秒快照，含 2026-07~10 变更） |
 | `docs/MIGRATION_PLAN.md` | **迁移到客户内网新服务器的方案、盘点与待决策项** |
-| `docs/TODO_LIST.md` | 待办事项与技术债清单（按优先级） |
+| `docs/wheel/TODO_LIST.md` | 待办事项与技术债清单（按优先级，每项带验收标准） |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
-| `docs/DEPLOYMENT_LOG.md` | 部署问题与变更日志（规则：只追加） |
+| `docs/wheel/DEPLOYMENT_LOG.md` | 部署问题与变更日志（编号连续，规则：只追加） |
 | `docs/EXECUTIVE_SUMMARY.md` / `docs/USER_JOURNEY.md` | 面向管理层的功能概览、用户旅程图 |
+| `docs/wheel/COLLABORATION_PROTOCOL.md` | 人机协作协议与飞轮文档格式规范 |
 | `docs/refs/` | OCR 选型历史研究（**已废弃方案存档**，不代表当前实现） |
 | `AGENTS.md` | AI 编码助手行为规范 |
 

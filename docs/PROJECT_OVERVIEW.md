@@ -1,6 +1,6 @@
 # 项目总览：智慧猪群识别系统 (Pig Count)
 
-**版本**: v0.4
+**版本**: v2.1
 **最后更新**: 2026-10-21
 
 ---
@@ -98,13 +98,17 @@ pig-counter/                   # 仓库根 = 部署根
 │       ├── store/index.js
 │       ├── router/index.js
 │       └── utils/imageUtils.js
-├── scripts/
-├── docs/                      # 飞轮文档（本目录）
-│   ├── PROJECT_OVERVIEW.md
-│   ├── HANDOVER_CONTEXT.md
-│   ├── TODO_LIST.md
-│   ├── DEPLOYMENT_LOG.md
-│   └── refs/
+├── docs/                      # 文档（导航见 docs/README.md）
+│   ├── README.md              # 文档导航与维护规则
+│   ├── PROJECT_OVERVIEW.md    # 技术总览（本文件）
+│   ├── MIGRATION_PLAN.md      # 迁移方案
+│   ├── EXECUTIVE_SUMMARY.md   # 管理层汇报
+│   ├── USER_JOURNEY.md        # 用户旅程图
+│   ├── KNOWN_ISSUES.md        # 功能层已知限制
+│   ├── refs/                  # OCR 选型历史存档
+│   └── wheel/                 # 协作飞轮：HANDOVER / TODO_LIST / DEPLOYMENT_LOG / 协议
+├── nginx.conf
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -217,11 +221,10 @@ pig-counter/                   # 仓库根 = 部署根
 | GET | `/api/detection-stats/by-farm` | 按猪场统计 |
 | GET | `/api/detection-stats/time-series` | 时序趋势 |
 
-### OCR（保留，已降级为非核心）
+### OCR（已废弃，仅存水印识别）
 
-| 方法 | 路由 | 功能 |
-|---|---|---|
-| POST | `/api/ocr/farm-mark` | 上传图片，识别墙面粉笔字/编号牌，返回文字 + 农场匹配建议 |
+> 旧 `/api/ocr/farm-mark` 端点已随 `ocr.py` 一并删除（2026-10-21）。
+> 当前 OCR 能力只剩水印识别（qwen-vl-ocr），在批量上传链路内部调用，不对外暴露独立端点。
 
 ---
 
