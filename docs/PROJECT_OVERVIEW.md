@@ -52,12 +52,13 @@ sudo mysql -u root     # 密码 pig_counterMysql，库 pig_counter
 ```
 pig-counter/
 ├── app.py                     # FastAPI 全部后端代码（含批量上传、Excel 导出）
-├── ocr.py                     # OCR 标记识别模块（PaddleOCR + qwen-vl-ocr）
+├── ocr.py                     # 旧版 OCR 模块（仅 scripts/validate_ocr.py 使用）
+├── watermark_ocr.py           # 水印识别模块（app.py 第 21 行 import，生产必倚）
 ├── requirements.txt           # Python 依赖
-├── excel_template.xlsx        # 甲方 Excel 导出模板
+├── excel_template_v2.xlsx     # 甲方 Excel 导出模板（app.py 实际读取）
 ├── Dockerfile                 # python:3.11-slim-bookworm
 ├── docker-compose.yml         # mysql + backend + nginx 编排
-├── nginx.conf                 # 反向代理，client_max_body_size 50M
+├── nginx.conf                 # 反向代理，client_max_body_size 500M
 ├── mysql_init.sql             # 建表脚本
 ├── model/
 │   └── pig_count.onnx         # 默认 ONNX 检测模型
@@ -130,7 +131,7 @@ pig-counter/
 
 ## Excel 模板导出
 
-- 模板文件：`excel_template.xlsx`（甲方「活体生猪盘点表」）
+- 模板文件：`excel_template_v2.xlsx`（甲方「活体生猪盘点表」，旧的 `excel_template.xlsx` 已废弃）
 - 承储单位固定为「乐清市华统牧业有限公司」
 - 文件夹名称自动拆解：栋舍 / 楼层 / 单元 / 栏舍号
 - 图片嵌入单元格（quality=100，尺寸自适应）
