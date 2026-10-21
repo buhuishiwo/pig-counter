@@ -87,9 +87,16 @@ docker compose up -d --build
 
 | 服务 | 端口 | 代码来源 | 改了代码怎么生效 |
 |:-----|:-----|:-----|:-----|
-| nginx | 8888 | 镜像 `nginx:latest`，挂载宿主 `./dist` 与 `./nginx.conf` | 只重跑 `npm run build`，**无需重启容器** |
-| backend | 8866 | 镜像 `build: .`，`COPY . /app` 打进镜像，**无挂载** | 必须 `docker compose up -d --build backend` |
-| mysql | 3307 | 命名卷 `mysql_data` + `./mysql_init.sql` 初始化 | 数据在卷里；`mysql_init.sql` **只在空卷时执行**，已有库改结构要手工执行 SQL |
+| nginx | `8888:80` | 镜像 `nginx:latest`，挂载宿主 `./dist` 与 `./nginx.conf` | 只重跑 `npm run build`，**无需重启容器** |
+| backend | `127.0.0.1:8866` | 镜像 `build: .`，`COPY . /app` 打进镜像，**无挂载** | 必须 `docker compose up -d --build backend` |
+| mysql | `127.0.0.1:3307` | 命名卷 `mysql_data` + `./mysql_init.sql` 初始化 | 数据在卷里；`mysql_init.sql` **只在空卷时执行**，已有库改结构要手工执行 SQL |
+
+**端口只对外开 `8888`**。`8866`（无鉴权的推理接口）和 `3307`（MySQL root）都只绑在 `127.0.0.1`，避免绕过 nginx 直打后端、也避免数据库端口暴露。nginx 是通过 `pig-count-network` 访问 `backend:8866` 的，不依赖宿主端口。需要从本机连数据库时用 SSH 隧道：
+
+```bash
+ssh -L 3307:127.0.0.1:3307 root@47.110.63.70
+# 然后本地连 127.0.0.1:3307
+```
 
 `.env` 的两种用途要区分清楚：
 
@@ -177,6 +184,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 | 最大上传体积 | 500M | `nginx.conf` → `client_max_body_size` |
 | API 超时 | 600s | `nginx.conf` → `proxy_read_timeout` |
 | MySQL 时区 | Asia/Shanghai | `docker-compose.yml` → mysql 容器 `TZ` 环境变量 |
+| 对外暴露端口 | 仅 `8888`（nginx） | `docker-compose.yml` → backend/mysql 均绑 `127.0.0.1` |
 | ONNX 模型路径 | `model/pig_count.onnx` | 环境变量 `PIG_MODEL_PATH` |
 | 数据库密码 | `pig_counterMysql` | `docker-compose.yml` / `Dockerfile` 默认值 |
 | 水印 OCR 密钥 | 宿主 `.env` 的 `OCR_API_KEY` | `docker-compose.yml` → `environment` |

@@ -1,11 +1,11 @@
-version: "3"
-
 services:
   mysql:
     image: mysql:8.0
     container_name: pig-count-mysql
     ports:
-      - "3307:3306"
+      # 仅绑本机：不对外暴露 MySQL。需要外部连库时用 SSH 隧道：
+      #   ssh -L 3307:127.0.0.1:3307 root@<server>
+      - "127.0.0.1:3307:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=pig_counterMysql
       - MYSQL_DATABASE=pig_counter
@@ -23,7 +23,10 @@ services:
     build: .
     container_name: pig-count-backend
     ports:
-      - "8866:8866"
+      # 仅绑本机：公网唯一入口是 nginx 的 8888。
+      # nginx 通过 pig-count-network 访问 backend:8866，不依赖宿主端口，
+      # 因此关掉对外映射不影响服务，同时避免绕过 nginx 直打无鉴权的推理接口。
+      - "127.0.0.1:8866:8866"
     environment:
       - PIG_SERVICE_HOST=0.0.0.0
       - PIG_SERVICE_PORT=8866
