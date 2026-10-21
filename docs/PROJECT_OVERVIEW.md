@@ -38,7 +38,7 @@ source .venv/bin/activate
 python app.py          # 端口 8866
 
 # 前端
-cd /home/user/Workspace/PigCount/pig-counter/pig-counter
+cd /home/user/Workspace/PigCount/pig-counter/frontend
 npm run dev            # Vite，端口 5173
 
 # MySQL
@@ -50,19 +50,19 @@ sudo mysql -u root     # 密码 pig_counterMysql，库 pig_counter
 ## 目录结构
 
 ```
-pig-counter/
-├── app.py                     # FastAPI 全部后端代码（含批量上传、Excel 导出）
-├── watermark_ocr.py           # 水印识别模块（app.py 第 21 行 import，生产必倚）
-├── requirements.txt           # Python 依赖
-├── excel_template_v2.xlsx     # 甲方 Excel 导出模板（app.py 实际读取）
-├── Dockerfile                 # python:3.11-slim-bookworm
+pig-counter/                   # 仓库根 = 部署根
+├── backend/                   # 后端（Docker 构建上下文）
+│   ├── app.py                 # FastAPI 全部后端代码（含批量上传、Excel 导出）
+│   ├── watermark_ocr.py       # 水印识别模块（app.py import，生产必倚）
+│   ├── requirements.txt       # Python 依赖
+│   ├── Dockerfile             # python:3.11-slim-bookworm
+│   ├── mysql_init.sql         # 建表脚本
+│   ├── excel_template_v2.xlsx # 甲方 Excel 导出模板（app.py 实际读取）
+│   └── model/pig_count.onnx   # 默认 ONNX 检测模型
 ├── docker-compose.yml         # mysql + backend + nginx 编排
 ├── nginx.conf                 # 反向代理，client_max_body_size 500M
-├── mysql_init.sql             # 建表脚本
-├── model/
-│   └── pig_count.onnx         # 默认 ONNX 检测模型
-├── dist/                      # Vue 构建产物
-├── pig-counter/               # Vue 3 源码（Vite）
+├── dist/                      # Vue 构建产物（nginx 挂载）
+├── frontend/                  # Vue 3 源码（Vite）
 │   ├── vite.config.js
 │   ├── package.json
 │   └── src/

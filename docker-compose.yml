@@ -14,13 +14,13 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./mysql_init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backend/mysql_init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
     networks:
       - pig-count-network
 
   backend:
-    build: .
+    build: ./backend
     container_name: pig-count-backend
     ports:
       # 仅绑本机：公网唯一入口是 nginx 的 8888。

@@ -23,6 +23,8 @@ from watermark_ocr import recognize_watermark, recognize_watermarks_batch
 SERVICE_DIR = Path(__file__).resolve().parent
 
 load_dotenv(SERVICE_DIR / ".env")
+# 项目根目录也放一份 .env（docker compose 从根目录读取做变量替换），本地直跑时向上兼容
+load_dotenv(SERVICE_DIR.parent / ".env")
 STATIC_DIR = SERVICE_DIR / "static"
 DEFAULT_MODEL_PATH = SERVICE_DIR / "model" / "pig_count.onnx"
 DEFAULT_HOST = os.getenv("PIG_SERVICE_HOST", "0.0.0.0")

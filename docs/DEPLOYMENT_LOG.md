@@ -56,7 +56,7 @@ source .venv/bin/activate
 python app.py          # 端口 8866
 
 # 前端
-cd /home/user/Workspace/PigCount/pig-counter/pig-counter
+cd /home/user/Workspace/PigCount/pig-counter/frontend
 npm run dev            # Vite，端口 5173
 ```
 
