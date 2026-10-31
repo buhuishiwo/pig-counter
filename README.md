@@ -51,6 +51,7 @@ pig-counter/                       # 仓库根 = 部署根
 | `docs/PROJECT_OVERVIEW.md` | 技术栈、目录结构、业务逻辑总览、已知问题 |
 | `docs/wheel/HANDOVER_CONTEXT.md` | 交接上下文与阶段进展（30 秒快照，含 2026-07~10 变更） |
 | `docs/MIGRATION_PLAN.md` | **迁移到客户内网新服务器的方案、盘点与待决策项** |
+| `docs/DEPLOY_HYPERV_UBUNTU.md` | **Windows Server 2022 + Hyper-V + Ubuntu 虚拟机部署教程（含搬数据、验收、排错、运维）** |
 | `docs/wheel/TODO_LIST.md` | 待办事项与技术债清单（按优先级，每项带验收标准） |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
 | `docs/wheel/DEPLOYMENT_LOG.md` | 部署问题与变更日志（编号连续，规则：只追加） |
