@@ -197,14 +197,14 @@ export default {
         return [
           { icon: 'PiggyBank', label: '预测识别数', value: hasBatchResult && img ? (img.original_pig_count || img.pig_count) : null, unit: hasBatchResult ? '头' : null, cls: '', active: hasBatchResult },
           { icon: 'Zap', label: '处理耗时', value: hasBatchResult && img ? img.processing_time_ms : null, unit: hasBatchResult ? 'ms' : null, cls: '', active: hasBatchResult },
-          { icon: 'Target', label: '平均置信度', value: hasBatchResult && img ? Math.round(img.confidence * 100) + '%' : null, unit: null, cls: '', active: hasBatchResult },
+          { icon: 'Target', label: '初检置信度', value: hasBatchResult && img ? Math.round(img.confidence * 100) + '%' : null, unit: null, cls: '', active: hasBatchResult },
           { icon: 'Sparkles', label: '实际识别数', value: hasBatchResult && img ? img.pig_count : null, unit: hasBatchResult ? '头' : null, cls: 'stat-blue', active: hasBatchResult }
         ]
       }
       return [
         { icon: 'PiggyBank', label: '预测识别数', value: hasResult.value ? (window.__modelOriginalCount || pigCount.value) : null, unit: hasResult.value ? '头' : null, cls: '', active: hasResult.value },
         { icon: 'Zap', label: '处理耗时', value: inferenceTime.value, unit: inferenceTime.value ? 'ms' : null, cls: '', active: !!inferenceTime.value },
-        { icon: 'Target', label: '平均置信度', value: hasResult.value ? confidencePct.value + '%' : null, unit: null, cls: '', active: hasResult.value },
+        { icon: 'Target', label: '初检置信度', value: hasResult.value ? confidencePct.value + '%' : null, unit: null, cls: '', active: hasResult.value },
         { icon: 'Sparkles', label: '实际识别数', value: hasResult.value ? pigCount.value : null, unit: hasResult.value ? '头' : null, cls: 'stat-blue', active: hasResult.value }
       ]
     })

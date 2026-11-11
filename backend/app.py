@@ -1501,57 +1501,70 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
         unit_results: list[dict] = []
 
         for pen_number, items in pens_map.items():
-            item = items[0]
-            result = None
-            _annotated = None
+            # 同一 (单元, 栏号) 可能对应多张照片（补拍的标识卡、重拍的栏舍等）。
+            # 全部送推理，只保留识别猪只最多的一张；数量相同时保留上传顺序靠前的。
+            best = None
+            for cand_item in items:
+                cand = {"item": cand_item, "result": None, "annotated": None, "image": None, "count": 0}
+                try:
+                    cand_image = decode_image(cand_item["bytes"])
+                    cand_result, cand_annotated = predict_image(
+                        image=cand_image,
+                        model_path=model_path,
+                        conf_threshold=0.25,
+                        iou_threshold=0.45,
+                        imgsz=960,
+                    )
+                    cand.update(result=cand_result, annotated=cand_annotated,
+                                image=cand_image, count=cand_result.predicted_count)
+                except Exception:
+                    pass
+                if best is None or cand["count"] > best["count"]:
+                    best = cand
+
+            item = best["item"]
+            result = best["result"]
+            _annotated = best["annotated"]
+            image = best["image"]
+            count = best["count"]
             record_id = None
             wm = item.get("watermark")
             wm_count = wm.get("count") if wm else None
 
             try:
-                image_bytes = item["bytes"]
-                img_path = tmp_dir / f"{unit_name}_{item['name']}"
-                img_path.write_bytes(image_bytes)
-                orig_image_paths.append(str(img_path))
+                if result is not None:
+                    img_path = tmp_dir / f"{unit_name}_{item['name']}"
+                    img_path.write_bytes(item["bytes"])
+                    orig_image_paths.append(str(img_path))
 
-                image = decode_image(image_bytes)
-                result, _annotated = predict_image(
-                    image=image,
-                    model_path=model_path,
-                    conf_threshold=0.25,
-                    iou_threshold=0.45,
-                    imgsz=960,
-                )
-                count = result.predicted_count
+                    import cv2 as _cv2
+                    ann_path = tmp_dir / f"ann_{unit_name}_{item['name']}"
+                    _cv2.imwrite(str(ann_path), _annotated)
+                    image_paths.append(str(ann_path))
 
-                import cv2 as _cv2
-                ann_path = tmp_dir / f"ann_{unit_name}_{item['name']}"
-                _cv2.imwrite(str(ann_path), _annotated)
-                image_paths.append(str(ann_path))
+                    avg_conf = (
+                        sum(d.confidence for d in result.detections) / len(result.detections)
+                        if result.detections else 0
+                    )
+                    boxes_for_db = [
+                        {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2,
+                         "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
+                        for d in result.detections
+                    ] if result.detections else []
 
-                avg_conf = (
-                    sum(d.confidence for d in result.detections) / len(result.detections)
-                    if result.detections else 0
-                )
-                boxes_for_db = [
-                    {"x1": d.x1, "y1": d.y1, "x2": d.x2, "y2": d.y2,
-                     "score": d.confidence, "class_id": d.class_id, "class_name": d.class_name}
-                    for d in result.detections
-                ] if result.detections else []
+                    record_id = await save_detection_record(
+                        farm_id=farm_id,
+                        image_name=item["full_path"],
+                        predicted_count=count,
+                        processing_time_ms=result.processing_time_ms,
+                        annotated_image=_annotated,
+                        confidence=avg_conf,
+                        boxes=boxes_for_db,
+                        original_image=image,
+                    )
 
-                record_id = await save_detection_record(
-                    farm_id=farm_id,
-                    image_name=item["full_path"],
-                    predicted_count=count,
-                    processing_time_ms=result.processing_time_ms,
-                    annotated_image=_annotated,
-                    confidence=avg_conf,
-                    boxes=boxes_for_db,
-                    original_image=image,
-                )
-
-                if record_id and wm:
-                    await save_watermark_data(record_id, wm)
+                    if record_id and wm:
+                        await save_watermark_data(record_id, wm)
 
             except Exception:
                 count = 0
