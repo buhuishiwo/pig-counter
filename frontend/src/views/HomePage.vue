@@ -84,7 +84,7 @@
             </button>
           </div>
           <div class="edit-actions">
-            <button class="edit-btn edit-btn--primary" @click="saveBoxesToDb" :disabled="!editRecordId">保存</button>
+            <button class="edit-btn edit-btn--primary" @click="saveBoxesToDb" :disabled="!editRecordId || editSaving">{{ editSaving ? '保存中…' : '保存并关闭' }}</button>
             <button class="edit-close-btn" @click="closeEditModal" title="关闭">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -92,6 +92,7 @@
             </button>
           </div>
         </div>
+        <div class="edit-toast" :class="{ 'edit-toast--err': editToast.error }" v-show="editToast.show">{{ editToast.msg }}</div>
         <div class="edit-body">
           <div class="edit-info">
             <span class="edit-pill">当前 {{ editBoxes.length }} 个识别框</span>
@@ -107,13 +108,13 @@
               @mousedown="onEditCanvasMouseDown" @mousemove="onEditCanvasMouseMove"
               @mouseup="onEditCanvasMouseUp" @click="onEditCanvasClick"></canvas>
             <div class="edit-pager" v-if="batchResults && batchAnnotatedImages.length > 1" @click.stop>
-              <button class="edit-nav-btn" @click.stop="switchEditImage(-1)" title="上一张">
+              <button class="edit-nav-btn" :disabled="editSaving" @click.stop="switchEditImage(-1)" title="上一张">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
               </button>
               <span class="edit-pager-idx">{{ batchImageIndex + 1 }} / {{ batchAnnotatedImages.length }}</span>
-              <button class="edit-nav-btn" @click.stop="switchEditImage(1)" title="下一张">
+              <button class="edit-nav-btn" :disabled="editSaving" @click.stop="switchEditImage(1)" title="下一张">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
@@ -239,6 +240,15 @@ export default {
     let _prevEditImageUrl = null
     // 切换图片时把旧图垫成背景，等新图真正 load 完再撤掉 —— 肉眼看不到白屏
     const editLoadingBg = ref('')
+    // 翻页时的自动保存状态 + 弹窗内轻提示（NotificationCard 的 z-index 会被弹窗遮住）
+    const editSaving = ref(false)
+    const editToast = ref({ show: false, msg: '', error: false })
+    let _editToastTimer = null
+    function showEditToast(msg, error = false) {
+      clearTimeout(_editToastTimer)
+      editToast.value = { show: true, msg, error }
+      _editToastTimer = setTimeout(() => { editToast.value = { ...editToast.value, show: false } }, 1800)
+    }
 
     /** 把“当前选中图片”装载进编辑弹窗的状态（不动弹窗的显示/隐藏） */
     function loadEditTarget() {
@@ -280,6 +290,8 @@ export default {
     }
 
     function closeEditModal() {
+      // 关闭前仍有未保存改动 → 提醒一次（保存并关闭走的是已保存路径，不会触发）
+      if (showEditModal.value && isEditDirty() && !window.confirm('当前修改尚未保存，确定关闭吗？')) return
       if (editImageUrl.value?.startsWith('blob:')) URL.revokeObjectURL(editImageUrl.value)
       if (_prevEditImageUrl) { URL.revokeObjectURL(_prevEditImageUrl); _prevEditImageUrl = null }
       showEditModal.value = false
@@ -411,30 +423,24 @@ export default {
       }
     }
 
-    /** 编辑弹窗内翻到上一张/下一张（批量模式）；有未保存修改时先确认。
-     *  注意：这里不能先 close 再 open（弹窗会被销毁重建 → 闪动，快速连点还会误关）。 */
-    function switchEditImage(delta) {
-      const total = batchAnnotatedImages.value.length
-      if (total < 2) return
-      const changed = JSON.stringify(editBoxes.value) !== JSON.stringify(activeResult.value?.boxes || [])
-      if (changed && !window.confirm('当前修改尚未保存，切换后会丢失这些修改，继续吗？')) return
-      batchImageIndex.value = (batchImageIndex.value + delta + total) % total
-      loadEditTarget()
+    /** 当前是否有未保存的标注改动 */
+    function isEditDirty() {
+      return JSON.stringify(editBoxes.value) !== JSON.stringify(activeResult.value?.boxes || [])
     }
 
-    async function saveBoxesToDb() {
-      const original = JSON.stringify(activeResult.value?.boxes || [])
-      const current = JSON.stringify(editBoxes.value)
-      if (original === current) {
-        farmState.showNotify?.('success', '保存成功', `已更新 ${editBoxes.value.length} 个识别框`)
-        closeEditModal(); return
-      }
+    /**
+     * 把当前栏的标注写回数据库（不关弹窗）。
+     * @returns {Promise<boolean>} 是否保存成功
+     */
+    async function persistCurrent() {
+      if (!isEditDirty()) return true
       if (!editRecordId.value) {
         try { const r = await (await import('@/api/detectionApi')).getDetectionRecords({ page: 1, page_size: 1 }); if (r?.data?.length > 0) editRecordId.value = r.data[0].id } catch (_) {}
       }
       if (!editRecordId.value) {
         store.dispatch('addLog', { msg: '保存失败：无 recordId，请先重新识别', type: 'error' })
-        farmState.showNotify?.('error', '保存失败', '无 recordId，请先重新识别'); return
+        showEditToast('保存失败：无 recordId', true)
+        return false
       }
       try {
         const { updateDetectionRecord } = await import('@/api/detectionApi')
@@ -464,15 +470,48 @@ export default {
           if (res.annotated_image) { updated.annotatedImage = res.annotated_image; farmState._latestAnnotatedImage = res.annotated_image }
           store.commit('SET_RESULT', updated)
         }
-        store.dispatch('addLog', { msg: `已保存 ${editBoxes.value.length} 个识别框到数据库`, type: 'success' })
-        farmState.showNotify?.('success', '保存成功', `已更新 ${editBoxes.value.length} 个识别框`)
-        const boxesSnapshot = JSON.parse(JSON.stringify(editBoxes.value))
-        closeEditModal()
-        nextTick(() => { nextTick(() => { if (resultCard.value) resultCard.value.drawBoxesAnimated(boxesSnapshot) }) })
+        const penLabel = selectedBatchImage.value?.pen_name || ''
+        store.dispatch('addLog', { msg: penLabel ? `已保存标注：${penLabel}` : '已保存标注', type: 'success' })
+        return true
       } catch (e) {
         store.dispatch('addLog', { msg: '保存失败：' + e.message, type: 'error' })
-        farmState.showNotify?.('error', '保存失败', e.message)
+        showEditToast('保存失败：' + e.message, true)
+        return false
       }
+    }
+
+    /**
+     * 翻页：有改动就先自动保存当前栏，保存成功才翻页；失败则停在本页（改动保留）。
+     * 全程不关闭、不重建弹窗。
+     */
+    async function switchEditImage(delta) {
+      const total = batchAnnotatedImages.value.length
+      if (total < 2 || editSaving.value) return
+      if (isEditDirty()) {
+        editSaving.value = true
+        const ok = await persistCurrent()
+        editSaving.value = false
+        if (!ok) return
+        showEditToast('已保存')
+      }
+      batchImageIndex.value = (batchImageIndex.value + delta + total) % total
+      loadEditTarget()
+    }
+
+    /** 「保存并关闭」：保存后关闭弹窗 */
+    async function saveBoxesToDb() {
+      if (!isEditDirty()) {
+        farmState.showNotify?.('success', '保存成功')
+        closeEditModal(); return
+      }
+      editSaving.value = true
+      const ok = await persistCurrent()
+      editSaving.value = false
+      if (!ok) return
+      farmState.showNotify?.('success', '保存成功')
+      const boxesSnapshot = JSON.parse(JSON.stringify(editBoxes.value))
+      closeEditModal()
+      nextTick(() => { nextTick(() => { if (resultCard.value) resultCard.value.drawBoxesAnimated(boxesSnapshot) }) })
     }
 
     function exportAnnotatedImage() {
@@ -590,7 +629,7 @@ export default {
       onServiceOnline: farmState.onServiceOnline,
       toggleFarmDropdown: farmState.toggleFarmDropdown,
       selectFarmWrapper, handleAnalyzeWrapper,
-      showEditModal, editImageUrl, editImgKey, editLoadingBg, editRecordId, editBoxes, editSelectedIndex, editMode,
+      showEditModal, editImageUrl, editImgKey, editLoadingBg, editSaving, editToast, editRecordId, editBoxes, editSelectedIndex, editMode,
       openEditModal, closeEditModal, drawEditCanvas, onEditImgLoad,
       onEditCanvasMouseDown, onEditCanvasMouseMove, onEditCanvasMouseUp, onEditCanvasClick,
       saveBoxesToDb, exportAnnotatedImage, switchEditImage,

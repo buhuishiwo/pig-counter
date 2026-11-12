@@ -390,8 +390,13 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, 'S
 .edit-close-btn:hover { background: rgba(0, 0, 0, 0.1); color: var(--text) }
 /* 编辑弹窗内翻页（批量模式）：叠在图片右下角，不挤占头部布局 */
 .edit-pager { position: absolute; bottom: 16px; right: 16px; display: flex; align-items: center; gap: 8px; z-index: 3 }
+/* 弹窗内轻提示（NotificationCard 的 z-index 被弹窗遮住，所以自带一个） */
+.edit-toast { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); background: rgba(30, 30, 30, 0.88); color: #fff; font-size: 12px; padding: 7px 16px; border-radius: 999px; z-index: 5; pointer-events: none; white-space: nowrap; animation: editToastIn 0.18s ease }
+.edit-toast--err { background: #c0392b }
+@keyframes editToastIn { from { opacity: 0; transform: translate(-50%, -6px) } to { opacity: 1; transform: translate(-50%, 0) } }
 .edit-nav-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--sep); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) }
-.edit-nav-btn:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) }
+.edit-nav-btn:hover:not(:disabled) { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) }
+.edit-nav-btn:disabled { opacity: 0.45; cursor: not-allowed }
 .edit-nav-btn svg { color: var(--text-2) }
 .edit-pager-idx { padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--sep); font-size: 12px; font-weight: 500; color: var(--text-2); min-width: 52px; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) }
 .edit-body { flex: 1; display: flex; flex-direction: column; overflow: hidden }
