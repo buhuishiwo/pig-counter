@@ -371,7 +371,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, 'S
 .overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0 }
 .edit-modal { position: fixed; inset: 0; z-index: 9998; display: flex; align-items: center; justify-content: center; padding: 20px }
 .edit-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px) }
-.edit-container { position: relative; width: 90vw; max-width: 900px; max-height: 85vh; display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2) }
+.edit-container { position: relative; width: 90vw; max-width: 1200px; max-height: 85vh; display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2) }
 .edit-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--sep) }
 .edit-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text) }
 .edit-actions { display: flex; align-items: center; gap: 8px }
@@ -388,13 +388,19 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, 'S
 .edit-btn--danger:hover:not(:disabled) { background: rgba(255, 59, 48, 0.08); border-color: var(--red) }
 .edit-close-btn { width: 32px; height: 32px; border-radius: 8px; border: none; background: rgba(0, 0, 0, 0.05); color: var(--text-3); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s }
 .edit-close-btn:hover { background: rgba(0, 0, 0, 0.1); color: var(--text) }
+/* 编辑弹窗内翻页（批量模式）：叠在图片右下角，不挤占头部布局 */
+.edit-pager { position: absolute; bottom: 16px; right: 16px; display: flex; align-items: center; gap: 8px; z-index: 3 }
+.edit-nav-btn { width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--sep); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) }
+.edit-nav-btn:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) }
+.edit-nav-btn svg { color: var(--text-2) }
+.edit-pager-idx { padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--sep); font-size: 12px; font-weight: 500; color: var(--text-2); min-width: 52px; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) }
 .edit-body { flex: 1; display: flex; flex-direction: column; overflow: hidden }
 .edit-info { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--sep); font-size: 12px; color: var(--text-3) }
 .edit-pill { padding: 3px 8px; background: rgba(0, 122, 255, 0.08); border-radius: 6px; color: var(--blue); font-weight: 500 }
 .edit-pill--mode { background: rgba(52, 199, 89, 0.08); color: var(--green) }
 .edit-pill--delete { background: rgba(255, 59, 48, 0.08); color: var(--red) }
 .edit-hint { margin-left: auto; color: var(--text-4) }
-.edit-canvas-area { flex: 1; min-height: 300px; background: rgba(0, 0, 0, 0.03); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden }
+.edit-canvas-area { flex: 1; min-height: 300px; background-color: rgba(0, 0, 0, 0.03); background-size: contain; background-position: center; background-repeat: no-repeat; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden }
 .edit-img { max-width: 100%; max-height: 100%; object-fit: contain; display: block }
 .edit-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto; cursor: crosshair }
 .edit-placeholder { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-3); font-size: 14px }

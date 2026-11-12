@@ -99,13 +99,26 @@
             <span class="edit-pill edit-pill--delete" v-else>删除模式：点选后删除</span>
             <span class="edit-pill" v-if="editSelectedIndex !== null">已选中 #{{ editSelectedIndex + 1 }}</span>
           </div>
-          <div class="edit-canvas-area">
+          <div class="edit-canvas-area" :style="editLoadingBg ? { backgroundImage: editLoadingBg } : {}">
             <img v-if="editImageUrl" ref="editImg" :src="editImageUrl" :key="editImgKey" class="edit-img"
               @load="onEditImgLoad" alt="标注图" />
             <canvas ref="editCanvas" class="edit-canvas"
               :style="{ cursor: editMode === 'add' ? 'crosshair' : 'default' }"
               @mousedown="onEditCanvasMouseDown" @mousemove="onEditCanvasMouseMove"
               @mouseup="onEditCanvasMouseUp" @click="onEditCanvasClick"></canvas>
+            <div class="edit-pager" v-if="batchResults && batchAnnotatedImages.length > 1" @click.stop>
+              <button class="edit-nav-btn" @click.stop="switchEditImage(-1)" title="上一张">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+              </button>
+              <span class="edit-pager-idx">{{ batchImageIndex + 1 }} / {{ batchAnnotatedImages.length }}</span>
+              <button class="edit-nav-btn" @click.stop="switchEditImage(1)" title="下一张">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -222,8 +235,13 @@ export default {
     const editHint = ref('select')
     const editMode = ref('add')
     const _editInitialBoxCount = ref(0)
+    // 上一张图片的 blob URL：等新图 load 完成后再释放，避免快速连翻时把正在加载的图撤销掉
+    let _prevEditImageUrl = null
+    // 切换图片时把旧图垫成背景，等新图真正 load 完再撤掉 —— 肉眼看不到白屏
+    const editLoadingBg = ref('')
 
-    function openEditModal() {
+    /** 把“当前选中图片”装载进编辑弹窗的状态（不动弹窗的显示/隐藏） */
+    function loadEditTarget() {
       let boxes, recordId, imageUrl
       if (batchResults.value && selectedBatchImage.value) {
         boxes = selectedBatchImage.value.boxes || []
@@ -236,23 +254,34 @@ export default {
         boxes = result.value.boxes || []
         recordId = result.value.recordId || null
         imageUrl = previewUrl.value
-      } else { return }
+      } else { return false }
+      // 记住上一张的 blob，等新图加载完再释放（快速连翻也不会出现白图）
+      _prevEditImageUrl = editImageUrl.value?.startsWith('blob:') ? editImageUrl.value : null
+      // 弹窗已开着 = 属于“翻页切换”，先把旧图垫在画布区背景上
+      editLoadingBg.value = (showEditModal.value && editImageUrl.value) ? `url("${editImageUrl.value}")` : ''
       editBoxes.value = JSON.parse(JSON.stringify(boxes))
       _editInitialBoxCount.value = boxes.length
       editRecordId.value = recordId
       editImageUrl.value = imageUrl
-      editImgKey.value++
       editSelectedIndex.value = null
       editIsDrawing.value = false
       editDrawStart.value = null
       editDrawEnd.value = null
       editHint.value = 'select'
+      return true
+    }
+
+    function openEditModal() {
+      if (!loadEditTarget()) return
+      // 仅在重新打开弹窗时重建 <img>（切换翻页时不允许重建，否则会白屏一闪）
+      editImgKey.value++
       showEditModal.value = true
       store.dispatch('addLog', { msg: '已进入编辑模式', type: 'info' })
     }
 
     function closeEditModal() {
       if (editImageUrl.value?.startsWith('blob:')) URL.revokeObjectURL(editImageUrl.value)
+      if (_prevEditImageUrl) { URL.revokeObjectURL(_prevEditImageUrl); _prevEditImageUrl = null }
       showEditModal.value = false
       editBoxes.value = []
       editSelectedIndex.value = null
@@ -262,6 +291,9 @@ export default {
     }
 
     function onEditImgLoad() {
+      // 新图已加载：撤掉旧图背景、释放上一张的 blob
+      editLoadingBg.value = ''
+      if (_prevEditImageUrl) { URL.revokeObjectURL(_prevEditImageUrl); _prevEditImageUrl = null }
       nextTick(() => {
         const canvas = editCanvas.value
         const img = editImg.value
@@ -377,6 +409,17 @@ export default {
         editBoxes.value.splice(clicked, 1); editSelectedIndex.value = null; drawEditCanvas()
         store.dispatch('addLog', { msg: '已删除识别框', type: 'info' })
       }
+    }
+
+    /** 编辑弹窗内翻到上一张/下一张（批量模式）；有未保存修改时先确认。
+     *  注意：这里不能先 close 再 open（弹窗会被销毁重建 → 闪动，快速连点还会误关）。 */
+    function switchEditImage(delta) {
+      const total = batchAnnotatedImages.value.length
+      if (total < 2) return
+      const changed = JSON.stringify(editBoxes.value) !== JSON.stringify(activeResult.value?.boxes || [])
+      if (changed && !window.confirm('当前修改尚未保存，切换后会丢失这些修改，继续吗？')) return
+      batchImageIndex.value = (batchImageIndex.value + delta + total) % total
+      loadEditTarget()
     }
 
     async function saveBoxesToDb() {
@@ -547,10 +590,10 @@ export default {
       onServiceOnline: farmState.onServiceOnline,
       toggleFarmDropdown: farmState.toggleFarmDropdown,
       selectFarmWrapper, handleAnalyzeWrapper,
-      showEditModal, editImageUrl, editImgKey, editRecordId, editBoxes, editSelectedIndex, editMode,
+      showEditModal, editImageUrl, editImgKey, editLoadingBg, editRecordId, editBoxes, editSelectedIndex, editMode,
       openEditModal, closeEditModal, drawEditCanvas, onEditImgLoad,
       onEditCanvasMouseDown, onEditCanvasMouseMove, onEditCanvasMouseUp, onEditCanvasClick,
-      saveBoxesToDb, exportAnnotatedImage,
+      saveBoxesToDb, exportAnnotatedImage, switchEditImage,
       prevImage, nextImage, onDetailHover
     }
   }
