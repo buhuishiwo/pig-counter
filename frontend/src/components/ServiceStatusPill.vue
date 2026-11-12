@@ -36,6 +36,11 @@ export default {
       this.checking = true
       try {
         const online = await checkHealth()
+        // 批量识别进行中：后端在忙，健康检查超时不能判为离线（保持上次状态）
+        if (!online && this.$store.state.isAnalyzing) {
+          this.$store.dispatch('addLog', { msg: '识别进行中，暂未获取服务状态', type: 'info' })
+          return
+        }
         this.$store.commit('SET_SERVICE_STATUS', online)
         this.$store.dispatch('addLog', {
           msg: online ? '服务在线' : '服务未响应（Mock 模式）',
@@ -43,7 +48,7 @@ export default {
         })
         if (online) this.$emit('service-online')
       } catch {
-        this.$store.commit('SET_SERVICE_STATUS', false)
+        if (!this.$store.state.isAnalyzing) this.$store.commit('SET_SERVICE_STATUS', false)
       } finally {
         this.checking = false
       }

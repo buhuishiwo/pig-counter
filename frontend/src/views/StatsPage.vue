@@ -20,12 +20,12 @@
         <div class="last-update" v-if="lastUpdateTime">
           更新于 {{ lastUpdateTime }}
         </div>
-        <button class="refresh-btn" @click="loadAll" :disabled="loading">
+        <button class="refresh-btn" @click="loadAll" :disabled="loading || isAnalyzing" :title="isAnalyzing ? '批量识别进行中，结束后自动刷新' : '刷新数据'">
           <svg :class="{ spinning: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
           </svg>
-          <span>{{ loading ? '加载中…' : '刷新数据' }}</span>
+          <span>{{ isAnalyzing ? '识别中…' : (loading ? '加载中…' : '刷新数据') }}</span>
         </button>
       </div>
     </div>
@@ -500,6 +500,16 @@ import 'ant-design-vue/es/input/style'
 // 按需注册 Chart.js 组件（仅 Line 图表所需）
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend, Filler)
 
+// 页面缓存：离开统计页再回来时先展示上次结果，避免批量识别期间显示成 0 / 空
+const statsCache = {
+  globalStats: null,
+  farmStats: null,
+  timeSeriesData: null,
+  gallery: null,
+  galleryTotal: 0,
+  lastUpdateTime: null
+}
+
 export default {
   name: 'StatsPage',
   components: { BarChart3, PiggyBank, Camera, Warehouse, ZoomIn, APopover: Popover, AInputSearch: Input.Search },
@@ -507,25 +517,25 @@ export default {
   data() {
     return {
       loading: false,
-      lastUpdateTime: null,
+      lastUpdateTime: statsCache.lastUpdateTime,
 
       // 全局汇总
-      globalStats: { total_images: 0, total_pigs: 0, today_images: 0, today_pigs: 0 },
+      globalStats: statsCache.globalStats || { total_images: 0, total_pigs: 0, today_images: 0, today_pigs: 0 },
 
       // 猪场统计
-      farmStats: [],
+      farmStats: statsCache.farmStats || [],
       farmStatsLoading: false,
 
       // 时间序列数据
-      timeSeriesData: [],
+      timeSeriesData: statsCache.timeSeriesData || [],
       timeSeriesLoading: false,
       timeSeriesGranularity: 'day', // day, month 或 year
       timeSeriesChart: null,
 
       // 图片回看
       selectedFarmId: null,
-      gallery: [],
-      galleryTotal: 0,
+      gallery: statsCache.gallery || [],
+      galleryTotal: statsCache.galleryTotal || 0,
       galleryPage: 1,
       galleryPageSize: 12,
       galleryLoading: false,
@@ -555,6 +565,10 @@ export default {
   },
 
   computed: {
+    // 批量识别进行中：不拉数据、不刷新，保持识别前的画面
+    isAnalyzing() {
+      return !!this.$store.state.isAnalyzing
+    },
     calRightYear() {
       return this.calLeftMonth === 11 ? this.calLeftYear + 1 : this.calLeftYear
     },
@@ -623,7 +637,9 @@ export default {
   },
 
   created() {
-    this.loadAll()
+    // 批量识别进行中不拉数据：后端推理占满事件循环，请求会挂住，
+    // 页面会长时间停在 0 / 空状态。等识别结束后由 watch isAnalyzing 统一刷新。
+    if (!this.isAnalyzing) this.loadAll()
   },
 
   mounted() {
@@ -650,6 +666,10 @@ export default {
   },
 
   watch: {
+    // 批量识别结束→刷新一次，数据此时才包含新记录
+    isAnalyzing(val) {
+      if (!val) this.loadAll()
+    },
     // 监听时间序列数据变化，自动更新图表
     timeSeriesData: {
       handler() {
@@ -662,10 +682,22 @@ export default {
 
   methods: {
     async loadAll() {
+      if (this.isAnalyzing) return
       this.loading = true
       await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadGallery(), this.loadTimeSeriesData()])
       this.lastUpdateTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      this._syncCache()
       this.loading = false
+    },
+
+    /** 把当前数据写回页面缓存（离开统计页再回来时直接展示） */
+    _syncCache() {
+      statsCache.globalStats = this.globalStats
+      statsCache.farmStats = this.farmStats
+      statsCache.timeSeriesData = this.timeSeriesData
+      statsCache.gallery = this.gallery
+      statsCache.galleryTotal = this.galleryTotal
+      statsCache.lastUpdateTime = this.lastUpdateTime
     },
 
     async loadTimeSeriesData() {
@@ -680,6 +712,7 @@ export default {
         } else {
           this.timeSeriesData = []
         }
+        this._syncCache()
       } catch (e) { console.error(e); this.timeSeriesData = [] }
       finally {
         this.timeSeriesLoading = false
@@ -879,7 +912,7 @@ export default {
     async loadGlobalStats() {
       try {
         const res = await getDetectionStats(null)
-        if (res.success) this.globalStats = res.data
+        if (res.success) { this.globalStats = res.data; this._syncCache() }
       } catch (e) { console.error(e) }
     },
 
@@ -887,7 +920,7 @@ export default {
       this.farmStatsLoading = true
       try {
         const res = await getStatsByFarm()
-        if (res.success) this.farmStats = res.data
+        if (res.success) { this.farmStats = res.data; this._syncCache() }
       } catch (e) { console.error(e) }
       finally { this.farmStatsLoading = false }
     },
@@ -906,6 +939,7 @@ export default {
         if (res.success) {
           this.gallery = res.data
           this.galleryTotal = res.total
+          this._syncCache()
         }
       } catch (e) { console.error(e) }
       finally { this.galleryLoading = false }
