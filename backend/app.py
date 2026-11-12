@@ -4,6 +4,7 @@ import base64
 import os
 import threading
 import time
+import asyncio
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,15 @@ DB_CONFIG = {
 
 
 _MODEL_LOCK = threading.Lock()
+
+# 分批上传的取消令牌：前端取消/刷新时登记，服务端在每个栏推理前检查，
+# 避免“用户已取消、服务端仍在烧 CPU”。进程内内存即可，重启后自动清空。
+_CANCEL_TOKENS: set[str] = set()
+
+
+class BatchCancelRequest(BaseModel):
+    token: str = ""
+
 _MODEL_CACHE: dict[str, cv2.dnn.Net] = {}
 
 
@@ -1418,10 +1428,14 @@ class BatchUploadResponse(BaseModel):
 
 
 @app.post("/api/batch/upload")
-async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None), file_paths: list[str] = Form(default=[])) -> dict:
+async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None = Form(default=None), file_paths: list[str] = Form(default=[]), skip_excel: bool = Form(default=False), batch_token: str = Form(default="")) -> dict:
     """
     接收多文件上传（支持文件夹或平铺图片）。
     先通过水印 OCR 提取栏舍信息，再逐张推理，按单元汇总。
+
+    skip_excel: 前端分批上传时置 True——最终下载会调 /api/batch/regenerate-excel 重建，
+                此处生成的 Excel 无人使用，属纯浪费（每批 4~40 秒 + 数 MB base64）。
+    batch_token: 取消令牌，配合 /api/batch/cancel 让“取消”真正停下服务端推理。
     """
     if not files:
         raise HTTPException(status_code=400, detail="至少需要上传一张图片")
@@ -1491,16 +1505,23 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
     # 4. 逐张推理
     total_photos = 0
     total_pigs = 0
+    cancelled = False
     results: list[dict] = []
     image_paths: list[str] = []
     orig_image_paths: list[str] = []
 
     for unit_name in unit_order:
+        if batch_token and batch_token in _CANCEL_TOKENS:
+            cancelled = True
+            break
         pens_map = unit_map[unit_name]
         unit_pigs = 0
         unit_results: list[dict] = []
 
         for pen_number, items in pens_map.items():
+            if batch_token and batch_token in _CANCEL_TOKENS:
+                cancelled = True
+                break
             # 同一 (单元, 栏号) 可能对应多张照片（补拍的标识卡、重拍的栏舍等）。
             # 全部送推理，只保留识别猪只最多的一张；数量相同时保留上传顺序靠前的。
             best = None
@@ -1508,7 +1529,10 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
                 cand = {"item": cand_item, "result": None, "annotated": None, "image": None, "count": 0}
                 try:
                     cand_image = decode_image(cand_item["bytes"])
-                    cand_result, cand_annotated = predict_image(
+                    # 推理是 CPU 密集的同步调用，必须放线程里跑：
+                    # 否则会堵死事件循环，识别期间 /api/health、统计接口全部超时（前端状态灯误报离线）。
+                    cand_result, cand_annotated = await asyncio.to_thread(
+                        predict_image,
                         image=cand_image,
                         model_path=model_path,
                         conf_threshold=0.25,
@@ -1601,24 +1625,31 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             "subtotal": unit_pigs,
         })
 
-    # 5. 生成 Excel
-    farm_name = "-"
-    wm_extras = {}
-    for unit in results:
-        for pen in unit["pens"]:
-            rid = pen.get("record_id")
-            wm = pen.get("watermark")
-            if rid and wm:
-                wm_extras[rid] = {
-                    "building": wm.get("building") or "",
-                    "unit_name": wm.get("unit_name") or "",
-                    "storage_unit": wm.get("storage_unit") or "",
-                    "pen_number": wm.get("pen_number") or "",
-                    "count": wm.get("count"),
-                }
-    excel_b64 = _build_batch_excel(batch_name, results, farm_name, image_paths, orig_image_paths, watermark_extras=wm_extras)
+    # 5. 生成 Excel（skip_excel=True 时跳过：分批上传最终下载会走 regenerate-excel）
+    excel_b64 = ""
+    if not skip_excel:
+        farm_name = "-"
+        wm_extras = {}
+        for unit in results:
+            for pen in unit["pens"]:
+                rid = pen.get("record_id")
+                wm = pen.get("watermark")
+                if rid and wm:
+                    wm_extras[rid] = {
+                        "building": wm.get("building") or "",
+                        "unit_name": wm.get("unit_name") or "",
+                        "storage_unit": wm.get("storage_unit") or "",
+                        "pen_number": wm.get("pen_number") or "",
+                        "count": wm.get("count"),
+                    }
+        excel_b64 = await asyncio.to_thread(
+            _build_batch_excel, batch_name, results, farm_name,
+            image_paths, orig_image_paths, wm_extras,
+        )
 
     # 6. 清理临时文件
+    if batch_token:
+        _CANCEL_TOKENS.discard(batch_token)
     import shutil
     try:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -1631,8 +1662,19 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
         "units": results,
         "total_photos": total_photos,
         "total_pigs": total_pigs,
+        "cancelled": cancelled,
         "excel_base64": excel_b64,
     }
+
+
+@app.post("/api/batch/cancel")
+async def cancel_batch(request: BatchCancelRequest) -> dict:
+    """登记取消令牌：正在跑的批次会在下一个栏推理前停下（已写入的记录保留）。"""
+    if len(_CANCEL_TOKENS) > 200:
+        _CANCEL_TOKENS.clear()
+    if request.token:
+        _CANCEL_TOKENS.add(request.token)
+    return {"success": True}
 
 
 @app.post("/api/batch/regenerate-excel")
