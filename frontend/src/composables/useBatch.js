@@ -14,6 +14,86 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   const showFolderTree = ref(false)
   const _batchAbortCtrl = ref(null)
 
+  // 每批张数：50 张约 1.6 分钟（实测 1.9s/张），取消时最多白烧 1.6 分钟，且单批内存更低
+  const CHUNK_SIZE = 50
+  // 批内进度估算用（实测约 1.04s 推理 + OCR，端到端约 1.9s/张）
+  const MS_PER_PHOTO = 2000
+
+  /** 单批上传：一次 XHR POST /api/batch/upload */
+  function uploadChunk(files, paths, farmId, abortCtrl, onUploadFrac, token) {
+    const formData = new FormData()
+    if (farmId) formData.append('farm_id', farmId)
+    // 分批上传不生成 Excel：最终下载走 /api/batch/regenerate-excel
+    formData.append('skip_excel', 'true')
+    if (token) formData.append('batch_token', token)
+    files.forEach((f, i) => {
+      formData.append('files', f)
+      formData.append('file_paths', paths[i])
+    })
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      abortCtrl.signal.addEventListener('abort', () => xhr.abort())
+      xhr.open('POST', '/api/batch/upload')
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onUploadFrac) onUploadFrac(e.loaded / e.total)
+      }
+      xhr.onload = () => {
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => JSON.parse(xhr.responseText) })
+      }
+      xhr.onerror = () => reject(new Error('网络错误'))
+      xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
+      xhr.send(formData)
+    })
+  }
+
+  /** 通知服务端取消：让正在跑的批次在下一个栏推理前停下（已写入的记录保留） */
+  function cancelOnServer(token) {
+    if (!token) return
+    try {
+      const body = JSON.stringify({ token })
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/batch/cancel', new Blob([body], { type: 'application/json' }))
+      } else {
+        fetch('/api/batch/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+      }
+    } catch (_) { /* 取消失败不影响本地流程 */ }
+  }
+
+  /**
+   * 合并多批结果。规则与 backend/app.py 中 batch_upload 的聚合一致：
+   * 同一 (单元, 栏号) 只保留 predicted_count 最大的一张（前端这里是 pig_count），
+   * 数量相同时保留先出现的批次（=上传顺序靠前）。
+   * 后端改动时请同步此处。
+   */
+  function mergeChunkResults(results) {
+    const unitOrder = []
+    const unitMap = new Map()
+    let totalPhotos = 0
+    let totalPigs = 0
+    for (const res of results) {
+      for (const unit of res.units || []) {
+        if (!unitMap.has(unit.unit_name)) {
+          unitMap.set(unit.unit_name, new Map())
+          unitOrder.push(unit.unit_name)
+        }
+        const pens = unitMap.get(unit.unit_name)
+        for (const pen of unit.pens || []) {
+          const key = pen.pen_number ?? pen.pen_name
+          const prev = pens.get(key)
+          if (!prev || (pen.pig_count || 0) > (prev.pig_count || 0)) pens.set(key, pen)
+        }
+      }
+    }
+    const units = unitOrder.map(name => {
+      const pens = Array.from(unitMap.get(name).values())
+      const subtotal = pens.reduce((s, p) => s + (p.pig_count || 0), 0)
+      totalPhotos += pens.length
+      totalPigs += subtotal
+      return { unit_name: name, pens, subtotal }
+    })
+    return { units, total_photos: totalPhotos, total_pigs: totalPigs }
+  }
+
   const batchAnnotatedImages = computed(() => {
     if (!batchResults.value?.units) return []
     const images = []
@@ -99,57 +179,75 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     store.commit('SET_PROGRESS', 0)
     const abortCtrl = new AbortController()
     _batchAbortCtrl.value = abortCtrl
-    let simTimer = null
-    function startSimProgress() {
-      let ticks = 0
-      simTimer = setInterval(() => {
-        ticks++
-        const t = ticks * 0.2
-        const pct = Math.min(99, 50 + 49 * (1 - Math.exp(-t / 15)))
-        const v = Math.round(pct)
-        store.commit('SET_PROGRESS', v)
-        updateToastProgress(v)
-      }, 200)
+
+    // 切批：每 CHUNK_SIZE 张一批，单批耗时远低于 nginx 600s，且请求体远低于 500M
+    const totalFiles = batchFiles.value.length
+    const chunks = []
+    for (let start = 0; start < totalFiles; start += CHUNK_SIZE) {
+      const files = batchFiles.value.slice(start, start + CHUNK_SIZE)
+      const paths = files.map((f, i) => batchPaths.value?.[start + i] || f.webkitRelativePath || f.name)
+      chunks.push({ files, paths })
     }
-    function stopSimProgress() {
-      if (simTimer) { clearInterval(simTimer); simTimer = null }
+    const totalChunks = chunks.length
+
+    let tickTimer = null
+    const setProgress = (v) => {
+      const p = Math.max(0, Math.min(100, Math.round(v)))
+      store.commit('SET_PROGRESS', p)
+      updateToastProgress(p)
     }
-    showToastWithProgress('批次检测中…')
+    const stopTick = () => { if (tickTimer) { clearInterval(tickTimer); tickTimer = null } }
+
+    showToastWithProgress(totalChunks > 1 ? `批次检测中…（共 ${totalChunks} 批）` : '批次检测中…')
+    // 取消令牌：取消、刷新、关页时告知服务端停手（否则服务端会继续跑完本批）
+    const batchToken = (globalThis.crypto?.randomUUID && crypto.randomUUID()) || `b${Date.now()}${Math.random().toString(16).slice(2)}`
+    const onPageHide = () => cancelOnServer(batchToken)
+    window.addEventListener('pagehide', onPageHide)
+    const chunkResults = []
+    let cancelledByServer = false
     try {
-      const formData = new FormData()
-      if (store.state.selectedFarmId) formData.append('farm_id', store.state.selectedFarmId)
-      batchFiles.value.forEach((f, i) => {
-        formData.append('files', f)
-        formData.append('file_paths', batchPaths.value?.[i] || f.webkitRelativePath || f.name)
-      })
-      const resp = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        abortCtrl.signal.addEventListener('abort', () => xhr.abort())
-        xhr.open('POST', '/api/batch/upload')
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const pct = Math.round((e.loaded / e.total) * 50)
-            store.commit('SET_PROGRESS', pct)
-            updateToastProgress(pct)
-          }
+      for (let i = 0; i < totalChunks; i++) {
+        const ch = chunks[i]
+        const spanStart = (i / totalChunks) * 100
+        const span = 100 / totalChunks
+        const expectedMs = Math.max(3000, ch.files.length * MS_PER_PHOTO)
+        const startedAt = Date.now()
+        let uploadFrac = 0
+        // 批内进度：已用时间 ÷ 预计时间，封顶本批 95%，等真正收到响应才走满
+        tickTimer = setInterval(() => {
+          const elapsed = Math.min(0.95, (Date.now() - startedAt) / expectedMs)
+          setProgress(spanStart + span * Math.max(elapsed, uploadFrac * 0.3))
+        }, 250)
+
+        let resp
+        try {
+          resp = await uploadChunk(ch.files, ch.paths, store.state.selectedFarmId, abortCtrl, frac => { uploadFrac = frac }, batchToken)
+        } finally {
+          stopTick()
         }
-        xhr.upload.onload = () => {
-          startSimProgress()
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}))
+          const prefix = totalChunks > 1 ? `第 ${i + 1}/${totalChunks} 批失败：` : ''
+          throw new Error(prefix + (err.detail || `上传失败（HTTP ${resp.status}）`))
         }
-        xhr.onload = () => {
-          resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => JSON.parse(xhr.responseText) })
-        }
-        xhr.onerror = () => reject(new Error('网络错误'))
-        xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
-        xhr.send(formData)
-      })
-      if (!resp.ok) {
-        const err = await resp.json()
-        throw new Error(err.detail || '上传失败')
+        const chunkJson = await resp.json()
+        chunkResults.push(chunkJson)
+        setProgress(spanStart + span)
+        if (chunkJson.cancelled) { cancelledByServer = true; break }
       }
+      // 服务端因取消令牌停下：按“用户取消”处理，保留已完成批的结果
+      if (cancelledByServer) throw new DOMException('cancelled', 'AbortError')
+
+      // 合并多批结果（同批/跨批的同栏多图取识别数最多者）
+      const merged = mergeChunkResults(chunkResults)
       batchFullLoading.value = true
-      batchResults.value = await resp.json()
-      stopSimProgress()
+      batchResults.value = {
+        success: true,
+        batch_name: chunkResults[0]?.batch_name || '未命名批次',
+        units: merged.units,
+        total_photos: merged.total_photos,
+        total_pigs: merged.total_pigs
+      }
       await new Promise(r => {
         let cur = store.state.uploadProgress
         const tick = setInterval(() => {
@@ -160,24 +258,41 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         }, 50)
       })
       closeNotify()
-      store.dispatch('addLog', { msg: `批次检测完成: ${batchResults.value.total_pigs} 头猪`, type: 'info' })
+      store.dispatch('addLog', { msg: `批次检测完成: ${batchResults.value.total_pigs} 头猪（${totalChunks} 批）`, type: 'info' })
       loadBatchFullImages()
     } catch (e) {
-      stopSimProgress()
-      if (e.name === 'AbortError') {
-        closeNotify()
-        store.dispatch('addLog', { msg: '批量检测已取消', type: 'info' })
-        if (prevBatchResults) {
-          batchResults.value = prevBatchResults
-          batchImageIndex.value = prevBatchImageIndex
+      stopTick()
+      // 用户取消/刷新：告知服务端停手，避免它继续跑完本批
+      if (e.name === 'AbortError') cancelOnServer(batchToken)
+      // 已完成的部分仍已写入数据库，展示出来并提示，避免用户重传造成重复计数
+      if (chunkResults.length) {
+        const merged = mergeChunkResults(chunkResults)
+        batchFullLoading.value = true
+        batchResults.value = {
+          success: true,
+          batch_name: chunkResults[0]?.batch_name || '未命名批次',
+          units: merged.units,
+          total_photos: merged.total_photos,
+          total_pigs: merged.total_pigs
         }
+      } else if (e.name === 'AbortError' && prevBatchResults) {
+        batchResults.value = prevBatchResults
+        batchImageIndex.value = prevBatchImageIndex
+      }
+      closeNotify()
+      if (e.name === 'AbortError') {
+        const done = chunkResults.length
+        const msg = done ? `已取消：完成 ${done}/${totalChunks} 批，结果仅含已完成部分` : '批量检测已取消'
+        store.dispatch('addLog', { msg, type: 'info' })
+        showNotify('info', '已取消', msg)
       } else {
-        closeNotify()
         showNotify('error', '批量检测失败', e.message || '请重试')
         store.dispatch('addLog', { msg: '批次检测失败: ' + e.message, type: 'error' })
+        if (chunkResults.length) loadBatchFullImages()
       }
     } finally {
-      stopSimProgress()
+      stopTick()
+      window.removeEventListener('pagehide', onPageHide)
       _batchAbortCtrl.value = null
       batchProcessing.value = false
       store.commit('SET_ANALYZING', false)
