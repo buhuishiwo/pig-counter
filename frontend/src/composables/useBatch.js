@@ -38,7 +38,18 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         if (e.lengthComputable && onUploadFrac) onUploadFrac(e.loaded / e.total)
       }
       xhr.onload = () => {
-        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, json: () => JSON.parse(xhr.responseText) })
+        const text = xhr.responseText || ''
+        // Content-Length 是字节数；用来判断响应是否被截断（截断时会 JSON.parse 报
+        // "Unexpected end of JSON input"，用户看到的就是“批量检测失败”）
+        let received = 0
+        try { received = new Blob([text]).size } catch (_) { received = text.length }
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          text,
+          received,
+          contentLength: Number(xhr.getResponseHeader('Content-Length') || 0)
+        })
       }
       xhr.onerror = () => reject(new Error('网络错误'))
       xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'))
@@ -106,6 +117,9 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
           images.push({
             url,
             pen_name: pen.pen_name,
+            // 原图在本次上传中的相对路径（与 batchPaths 中的值一一对应），
+            // 用于在编辑标注时按路径找到正确的原始文件（不能按位置索引，见下）
+            source_path: pen.source_path || '',
             unit_name: unit.unit_name,
             pig_count: pen.pig_count,
             original_pig_count: pen.original_pig_count,
@@ -152,7 +166,8 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       const unitName = parts[1]
       const fileName = parts[parts.length - 1]
       const nameNoExt = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName
-      if (nameNoExt === '栏舍号') continue
+      // 凭证照 / 门牌照（水印字段是空的），不参与识别
+      if (['栏舍号', '单元号', '栋号', '栏号'].includes(nameNoExt)) continue
       if (!file.type.startsWith('image/')) continue
       if (!tree.units[unitName]) tree.units[unitName] = []
       tree.units[unitName].push(fileName)
@@ -219,18 +234,42 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
           setProgress(spanStart + span * Math.max(elapsed, uploadFrac * 0.3))
         }, 250)
 
-        let resp
-        try {
-          resp = await uploadChunk(ch.files, ch.paths, store.state.selectedFarmId, abortCtrl, frac => { uploadFrac = frac }, batchToken)
-        } finally {
-          stopTick()
+        const batchLabel = totalChunks > 1 ? `第 ${i + 1}/${totalChunks} 批` : ''
+        // 大响应偶尔会被截断（前端表现为 “Unexpected end of JSON input”），
+        // 这里做一次自动重试；仍失败才向上抛，并带上诊断信息。
+        let chunkJson = null
+        let lastErr = null
+        for (let attempt = 1; attempt <= 2 && !chunkJson; attempt++) {
+          let resp
+          try {
+            resp = await uploadChunk(ch.files, ch.paths, store.state.selectedFarmId, abortCtrl, frac => { uploadFrac = frac }, batchToken)
+          } finally {
+            stopTick()
+          }
+          if (!resp.ok) {
+            let detail = ''
+            try { detail = JSON.parse(resp.text)?.detail || '' } catch (_) {}
+            lastErr = new Error(`${batchLabel}失败：${detail || `HTTP ${resp.status}`}`)
+            // 4xx 属参数/体积问题，重试无意义
+            if (resp.status >= 400 && resp.status < 500) break
+          } else {
+            const truncated = resp.contentLength > 0 && resp.received < resp.contentLength
+            if (truncated) {
+              lastErr = new Error(`${batchLabel}响应不完整：收到 ${resp.received} 字节，应为 ${resp.contentLength} 字节`)
+            } else {
+              try {
+                chunkJson = JSON.parse(resp.text)
+              } catch (e) {
+                lastErr = new Error(`${batchLabel}响应解析失败（收到 ${resp.received} 字节）`)
+              }
+            }
+          }
+          if (!chunkJson && attempt < 2) {
+            store.dispatch('addLog', { msg: `重试${batchLabel}（${lastErr?.message || '响应异常'}）`, type: 'warn' })
+            await new Promise(r => setTimeout(r, 1200))
+          }
         }
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}))
-          const prefix = totalChunks > 1 ? `第 ${i + 1}/${totalChunks} 批失败：` : ''
-          throw new Error(prefix + (err.detail || `上传失败（HTTP ${resp.status}）`))
-        }
-        const chunkJson = await resp.json()
+        if (!chunkJson) throw lastErr || new Error(`${batchLabel}失败`)
         chunkResults.push(chunkJson)
         setProgress(spanStart + span)
         if (chunkJson.cancelled) { cancelledByServer = true; break }

@@ -256,9 +256,18 @@ export default {
       if (batchResults.value && selectedBatchImage.value) {
         boxes = selectedBatchImage.value.boxes || []
         recordId = selectedBatchImage.value.record_id || null
-        // 用 index 从 batchFiles 取原图（batchFiles 和 batchAnnotatedImages 同源同序）
-        const idx = batchImageIndex.value
-        const originalFile = farmState.batchFiles?.value?.[idx]
+        // 按“上传时的相对路径”反查原图：结果列表经过同栏去重/按单元分组，
+        // 与 batchFiles 的顺序不再一一对应，按位置取会张冠李戴。
+        const paths = farmState.batchPaths?.value || []
+        const want = selectedBatchImage.value.source_path
+        let fileIdx = want ? paths.indexOf(want) : -1
+        if (fileIdx < 0) {
+          // 兼容旧后端（无 source_path）：退回位置索引，并用文件名兜底校验
+          const idx = batchImageIndex.value
+          const f = farmState.batchFiles?.value?.[idx]
+          if (f && (!selectedBatchImage.value.pen_name || f.name === selectedBatchImage.value.pen_name)) fileIdx = idx
+        }
+        const originalFile = fileIdx >= 0 ? farmState.batchFiles?.value?.[fileIdx] : null
         imageUrl = originalFile ? URL.createObjectURL(originalFile) : selectedBatchImage.value.url
       } else if (result.value) {
         boxes = result.value.boxes || []

@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from watermark_ocr import recognize_watermark, recognize_watermarks_batch
+from watermark_ocr import recognize_watermark, recognize_watermarks_batch, parse_unit_pen
 
 SERVICE_DIR = Path(__file__).resolve().parent
 
@@ -44,6 +44,9 @@ DB_CONFIG = {
 
 
 _MODEL_LOCK = threading.Lock()
+
+# 这些文件名是“凭证照/门牌照”（水印字段是空的），不参与识别与统计
+_SCAFFOLD_PHOTO_NAMES = {"栏舍号", "单元号", "栋号", "栏号"}
 
 # 分批上传的取消令牌：前端取消/刷新时登记，服务端在每个栏推理前检查，
 # 避免“用户已取消、服务端仍在烧 CPU”。进程内内存即可，重启后自动清空。
@@ -1460,7 +1463,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
 
         file_name = parts[-1] if parts else (f.filename or "")
         name_no_ext = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
-        if name_no_ext == "栏舍号":
+        if name_no_ext in _SCAFFOLD_PHOTO_NAMES:
             continue
         if not f.content_type or not f.content_type.startswith("image/"):
             continue
@@ -1492,8 +1495,17 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
 
     for item, wm in zip(image_list, watermark_results):
         item["watermark"] = wm
-        unit_name = (wm.get("unit_name") if wm else None) or "未识别单元"
-        pen_number = (wm.get("pen_number") if wm else None) or item["name"].rsplit(".", 1)[0]
+        unit_name = (wm.get("unit_name") if wm else None) or ""
+        pen_number = (wm.get("pen_number") if wm else None) or ""
+        # 水印没读到栏舍号时（模型偶尔漏读整行），用文件名兜底解析，如 "1单元8栏.jpg"
+        if not pen_number:
+            _stem = item["name"].rsplit(".", 1)[0]
+            _u, _p = parse_unit_pen(_stem)
+            if _p:
+                pen_number = _p
+                unit_name = unit_name or _u
+        unit_name = unit_name or "未识别单元"
+        pen_number = pen_number or item["name"].rsplit(".", 1)[0]
 
         if unit_name not in unit_map:
             unit_map[unit_name] = _OD()
@@ -1596,6 +1608,7 @@ async def batch_upload(files: list[UploadFile] = File(...), farm_id: int | None 
             unit_results.append({
                 "pen_name": item["name"],
                 "pen_number": pen_number,
+                "source_path": item["full_path"],
                 "pig_count": count,
                 "processing_time_ms": result.processing_time_ms if result is not None else 0,
                 "annotated_image": create_thumbnail(_annotated, max_size=480, quality=70) if result is not None and _annotated is not None else None,
