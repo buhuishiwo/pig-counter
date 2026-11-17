@@ -57,6 +57,18 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     })
   }
 
+  const PENDING_ROLLBACK_KEY = 'pigcount_pending_rollback'
+
+  function readPendingRollback() {
+    try { return JSON.parse(localStorage.getItem(PENDING_ROLLBACK_KEY) || '[]') } catch (_) { return [] }
+  }
+  function writePendingRollback(ids) {
+    try {
+      if (ids.length) localStorage.setItem(PENDING_ROLLBACK_KEY, JSON.stringify(ids))
+      else localStorage.removeItem(PENDING_ROLLBACK_KEY)
+    } catch (_) { /* localStorage 不可用时忽略 */ }
+  }
+
   /**
    * 删除本次上传写入的记录（两种用途）：
    *   1) 合并时被淘汰的跨批重复项（同一栏只留识别数最多的一条）
@@ -70,6 +82,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ remove_record_ids: ids })
       })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
       const data = await r.json().catch(() => ({}))
       if (data && data.deleted) {
         store.dispatch('addLog', {
@@ -77,7 +90,26 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
           type: 'info'
         })
       }
-    } catch (_) { /* 清理失败不影响主流程 */ }
+    } catch (_) {
+      // 后端此刻不可用（例如失败原因就是服务挂了）→ 记入待回滚队列，等下次进页面/开始识别时补做
+      writePendingRollback([...new Set([...readPendingRollback(), ...ids])])
+    }
+  }
+
+  /** 补做上次没成功的回滚（后端恢复后调用） */
+  async function flushPendingRollback() {
+    const ids = readPendingRollback()
+    if (!ids.length) return
+    try {
+      const r = await fetch('/api/batch/dedupe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remove_record_ids: ids })
+      })
+      if (!r.ok) return
+      writePendingRollback([])
+      store.dispatch('addLog', { msg: `已补做上次失败批次的数据回滚（${ids.length} 条）`, type: 'info' })
+    } catch (_) { /* 下次再试 */ }
   }
 
   /** 取出若干批结果里所有 record_id */
@@ -256,6 +288,8 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       updateToastProgress(p)
     }
     const stopTick = () => { if (tickTimer) { clearInterval(tickTimer); tickTimer = null } }
+
+    flushPendingRollback()   // 上次失败时后端不可用，回滚没做成，这里补做
 
     showToastWithProgress(totalChunks > 1 ? `批次检测中…（共 ${totalChunks} 批）` : '批次检测中…')
     // 取消令牌：取消、刷新、关页时告知服务端停手（否则服务端会继续跑完本批）
@@ -468,6 +502,9 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     const total = batchAnnotatedImages.value.length
     if (total > 0) batchImageIndex.value = (batchImageIndex.value + 1) % total
   }
+
+  // 应用启动后补做上次未完成的回滚（后端恢复后才会成功）
+  setTimeout(() => { flushPendingRollback() }, 3000)
 
   return {
     batchFiles,
