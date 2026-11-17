@@ -7,9 +7,9 @@
 | 项 | 内容 |
 |:---|:-----|
 | **项目概要** | AI 猪只计数系统：上传猪舍图片 → ONNX 检测 → 标注图 + 计数 + 统计看板 + Excel 报表。前端 Vue 3 + Vite，后端 FastAPI，MySQL，Docker Compose 三容器部署。代码结构 `backend/` + `frontend/` |
-| **当前阶段** | **v3.0** 稳定运行中；P6 迁移准备 — 等待甲方确认目标系统（Ubuntu 22.04 首选 / Windows Server 2022 次选） |
-| **最新变更** | 2026-10-21：目录重构 backend/+frontend/、mysql 时区修复（TZ=Asia/Shanghai）、端口收窄（8866/3307 绑 127.0.0.1）、PaddleOCR 依赖移除（镜像 1.92GB→946MB）、仓库清理（node_modules 出库）、全套文档对齐 |
-| **下次第一件事** | 等甲方回复目标系统版本；确定后按 `docs/MIGRATION_PLAN.md` 执行：先 `mysqldump` 全量导出（含 655MB 图片）→ 选 A/B/C 方案打包 → 目标机导入 → 跑迁移验证清单 |
+| **当前阶段** | **v3.1**（2026-11-18）已上线预发 `47.110.63.70:8888`：批量上传分批（50 张/批）+ 跨批去重 + 取消真停 + 水印 OCR 适配新标准 + 编辑标注翻页/自动保存。**生产在客户内网**（Hyper-V 里的 Ubuntu，`192.168.250.2:8888`），是否已升级到 v3.1 需现场确认 |
+| **最新变更** | 2026-11-18：① 批量上传分批（`CHUNK_SIZE=50`）+ 真实进度 + 取消令牌 + 失败回滚；② 跨批同栏重复记录自动清理（`/api/batch/dedupe`）；③ 水印 OCR 改「原样输出 + 定向补问」，兼容 `1单元10栏`，单元/栏号/栋舍/头数 36/36；④ 门牌照 `单元号.jpg` 跳过；⑤ 编辑标注翻页（原地换图不闪）+ 翻页自动保存；⑥ 推理搬线程，识别期间 health/统计不再超时 |
+| **下次第一件事** | ① 内网生产同步 v3.1（`git fetch && git reset --hard origin/main` → 重建 backend → 本地构建 dist 后传入）；② 清理 `farm 12`（开发调试猪场）里历次测试数据；③ 按需做「从第 N 批续跑」与批次幂等 |
 
 ---
 
@@ -18,12 +18,14 @@
 | 节点 | 地址 | 角色 |
 |:-----|:-----|:-----|
 | 本地开发 | localhost:5173 (前端) / localhost:8866 (后端) | Vue 3 + Vite dev server, FastAPI uvicorn, MySQL 本地 |
-| 远程服务器 | 47.110.63.70:8888 | Nginx(前端静态) + FastAPI(8866) + MySQL(3307)，Docker Compose |
+| **生产**（客户内网） | `192.168.250.2:8888`（宿主 192.168.250.1） | Windows Server 2022 + Hyper-V + Ubuntu 22.04 VM，三容器栈；**本地环境不可达** |
+| **预发布** | 47.110.63.70:8888 | 原云服务器，现作为发版前验证环境（Nginx + FastAPI + MySQL，Docker Compose） |
 
-**SSH 方式**: `ssh root@47.110.63.70`（免密登录）
+**SSH 方式**: `ssh admin@47.110.63.70`（免密；**root 已禁登录**，服务器命令需 `sudo`）
+> 2026-11-11 起文档里的 `ssh root@…` 已失效，实际用户为 `admin`（在 docker 组且 `sudo -n` 免密）
 **Git 远程**: HTTPS `https://github.com/buhuishiwo/pig-counter.git`（服务器无 SSH key；偶发 443 超时，重试即可）
 **数据库**: 库 `pig_counter`，用户 `root`，密码 `pig_counterMysql`，数据在 Docker 命名卷 `pig-counter_mysql_data`（**无备份**）
-**分支**: 只剩 `main`（`dev` 与两个 feature 分支已于 2026-10-21 清理）；tag：v0.3(local) / v1.0 / v2.0 / v3.0
+**分支**: 只剩 `main`（`dev` 与两个 feature 分支已于 2026-10-21 清理）；tag：v0.3(local) / v1.0 / v2.0 / v3.0 / v3.0.1（修复前锚点）/ **v3.1**（分批上传等交付）
 
 **本地启动速查**:
 
@@ -40,11 +42,13 @@ npm run dev            # Vite，端口 5173
 **远程部署速查**（禁止 `git pull`，dist/.env 不入库且服务器工作区可能脏）:
 
 ```bash
-ssh root@47.110.63.70
+ssh admin@47.110.63.70
+sudo -i
 cd /opt/pig-counter/pig-counter
-git fetch origin && git reset --hard origin/main   # 拉代码
-cd frontend && npm run build && cd ..             # 前端变更时（产物落仓库根 dist/，nginx 挂载自动生效）
+git fetch origin && git reset --hard origin/main   # 拉代码（服务器到 GitHub 偶发 443 超时，重试即可）
 docker compose up -d --build backend               # 后端变更时（backend 无挂载，必须重建）
+# 前端：⚠️ 云预发机只有 1.87GB 内存，npm run build 会被 OOM Kill（exit 137）
+#       → 在本地构建后把 dist/ 用 tar/scp 传上去（dist 不入库，nginx 挂载自动生效）
 curl -s http://127.0.0.1:8888/api/health
 ```
 
@@ -102,6 +106,16 @@ src/
 ---
 
 ## 历史
+
+### 2026-11-18 — v3.1 交付（分批上传 + OCR 新标准 + 编辑体验）
+
+- **批量上传分批**：前端每 50 张一批调用 `/api/batch/upload`，绕开 500 张 / 500MB / 600s 三道限制；进度改为真实推进；取消/刷新通过令牌让服务端 1~2 秒内停下
+- **跨批去重**：同一 (单元, 栏号) 的多张照片跨批时会重复入库，合并后调用 `/api/batch/dedupe` 清理（限最近 1 天）。实测 546 张：界面 36 栏 vs 库内 153 条 → 修复后库内 36 条
+- **失败处理**：自动重试 2 次仍失败 → 通知卡「批量检测失败 / 识别过程异常，请重新尝试」+ 清空结果回到文件夹树 + 回滚本次记录（后端不可用时入 `localStorage` 队列，恢复后自动补做）
+- **水印 OCR**：改为「原样输出 + 本地按标签解析 + 缺字段定向补问」，兼容 `1单元10栏`；实测 39 张单元/栏号/栋舍/头数/承储单位 36/36
+- **门牌照**：`单元号.jpg` 上传前过滤（不推理、不入库）
+- **编辑标注**：右下角翻页器，翻页即自动保存（不关弹窗、不闪、不误退），待保存失败停在本页
+- **服务健壮性**：推理与 Excel 生成改为 `asyncio.to_thread`，识别期间 `/api/health` 从 15s 超时降到 0.3s；统计页识别中保持旧数据、结束自动刷新
 
 ### 2026-10-21 — 分支与版本治理
 
