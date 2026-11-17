@@ -190,8 +190,8 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       const unitName = parts[1]
       const fileName = parts[parts.length - 1]
       const nameNoExt = fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName
-      // 凭证照 / 门牌照（水印字段是空的），不参与识别
-      if (['栏舍号', '单元号', '栋号', '栏号'].includes(nameNoExt)) continue
+      // 门牌照（命名固定为"单元号"）：只有栋舍信息、没有栏号和猪只，不参与识别
+      if (nameNoExt === '单元号') continue
       if (!file.type.startsWith('image/')) continue
       if (!tree.units[unitName]) tree.units[unitName] = []
       tree.units[unitName].push(fileName)
