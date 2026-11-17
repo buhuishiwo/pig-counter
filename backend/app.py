@@ -56,6 +56,10 @@ _CANCEL_TOKENS: set[str] = set()
 class BatchCancelRequest(BaseModel):
     token: str = ""
 
+
+class BatchDedupeRequest(BaseModel):
+    remove_record_ids: list[int] = Field(default_factory=list)
+
 _MODEL_CACHE: dict[str, cv2.dnn.Net] = {}
 
 
@@ -1688,6 +1692,35 @@ async def cancel_batch(request: BatchCancelRequest) -> dict:
     if request.token:
         _CANCEL_TOKENS.add(request.token)
     return {"success": True}
+
+
+@app.post("/api/batch/dedupe")
+async def dedupe_batch_records(request: BatchDedupeRequest) -> dict:
+    """分批上传合并后，删除被淘汰的重复记录（同一栏多张照片只保留识别数最多的一条）。
+
+    只删最近 1 天内创建、且由本批次返回的 record_id，避免误删历史数据。
+    """
+    ids = [int(i) for i in (request.remove_record_ids or [])][:1000]
+    if not ids:
+        return {"success": True, "deleted": 0}
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cursor:
+                placeholders = ",".join(["%s"] * len(ids))
+                cursor.execute(
+                    f"DELETE FROM detection_records "
+                    f"WHERE id IN ({placeholders}) AND created_at > NOW() - INTERVAL 1 DAY",
+                    ids,
+                )
+                deleted = cursor.rowcount
+                conn.commit()
+        if deleted:
+            save_log("info", f"分批合并去重：删除 {deleted} 条被淘汰的重复记录")
+        return {"success": True, "deleted": deleted}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"去重失败: {exc}") from exc
 
 
 @app.post("/api/batch/regenerate-excel")

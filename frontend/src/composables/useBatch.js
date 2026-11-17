@@ -57,6 +57,22 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     })
   }
 
+  /** 删除跨批合并时被淘汰的重复记录（同一栏只留识别数最多的一条） */
+  async function dropSuperseded(ids) {
+    if (!ids || !ids.length) return
+    try {
+      const r = await fetch('/api/batch/dedupe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remove_record_ids: ids })
+      })
+      const data = await r.json().catch(() => ({}))
+      if (data && data.deleted) {
+        store.dispatch('addLog', { msg: `已清理 ${data.deleted} 条跨批重复记录`, type: 'info' })
+      }
+    } catch (_) { /* 清理失败不影响本次结果展示 */ }
+  }
+
   /** 通知服务端取消：让正在跑的批次在下一个栏推理前停下（已写入的记录保留） */
   function cancelOnServer(token) {
     if (!token) return
@@ -79,6 +95,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   function mergeChunkResults(results) {
     const unitOrder = []
     const unitMap = new Map()
+    const superseded = []          // 跨批同栏被淘汰的重复记录 id（合并后从库里删掉）
     let totalPhotos = 0
     let totalPigs = 0
     for (const res of results) {
@@ -91,7 +108,14 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         for (const pen of unit.pens || []) {
           const key = pen.pen_number ?? pen.pen_name
           const prev = pens.get(key)
-          if (!prev || (pen.pig_count || 0) > (prev.pig_count || 0)) pens.set(key, pen)
+          if (!prev) {
+            pens.set(key, pen)
+          } else if ((pen.pig_count || 0) > (prev.pig_count || 0)) {
+            if (prev.record_id) superseded.push(prev.record_id)
+            pens.set(key, pen)
+          } else if (pen.record_id) {
+            superseded.push(pen.record_id)
+          }
         }
       }
     }
@@ -102,7 +126,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       totalPigs += subtotal
       return { unit_name: name, pens, subtotal }
     })
-    return { units, total_photos: totalPhotos, total_pigs: totalPigs }
+    return { units, total_photos: totalPhotos, total_pigs: totalPigs, superseded }
   }
 
   const batchAnnotatedImages = computed(() => {
@@ -287,6 +311,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         total_photos: merged.total_photos,
         total_pigs: merged.total_pigs
       }
+      dropSuperseded(merged.superseded)
       await new Promise(r => {
         let cur = store.state.uploadProgress
         const tick = setInterval(() => {
@@ -314,6 +339,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
           total_photos: merged.total_photos,
           total_pigs: merged.total_pigs
         }
+        dropSuperseded(merged.superseded)
       } else if (e.name === 'AbortError' && prevBatchResults) {
         batchResults.value = prevBatchResults
         batchImageIndex.value = prevBatchImageIndex
