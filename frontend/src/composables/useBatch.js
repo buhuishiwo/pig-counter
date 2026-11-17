@@ -57,8 +57,12 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
     })
   }
 
-  /** 删除跨批合并时被淘汰的重复记录（同一栏只留识别数最多的一条） */
-  async function dropSuperseded(ids) {
+  /**
+   * 删除本次上传写入的记录（两种用途）：
+   *   1) 合并时被淘汰的跨批重复项（同一栏只留识别数最多的一条）
+   *   2) 识别失败回滚：把本次已写入的记录清掉，回到"未识别"状态，避免留下无人展示的脏数据
+   */
+  async function removeRecords(ids, reason = '') {
     if (!ids || !ids.length) return
     try {
       const r = await fetch('/api/batch/dedupe', {
@@ -68,9 +72,25 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       })
       const data = await r.json().catch(() => ({}))
       if (data && data.deleted) {
-        store.dispatch('addLog', { msg: `已清理 ${data.deleted} 条跨批重复记录`, type: 'info' })
+        store.dispatch('addLog', {
+          msg: reason ? `已回滚 ${data.deleted} 条记录（${reason}）` : `已清理 ${data.deleted} 条跨批重复记录`,
+          type: 'info'
+        })
       }
-    } catch (_) { /* 清理失败不影响本次结果展示 */ }
+    } catch (_) { /* 清理失败不影响主流程 */ }
+  }
+
+  /** 取出若干批结果里所有 record_id */
+  function collectRecordIds(results) {
+    const ids = []
+    for (const r of results) {
+      for (const u of r.units || []) {
+        for (const p of u.pens || []) {
+          if (p.record_id) ids.push(p.record_id)
+        }
+      }
+    }
+    return ids
   }
 
   /** 通知服务端取消：让正在跑的批次在下一个栏推理前停下（已写入的记录保留） */
@@ -311,7 +331,7 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
         total_photos: merged.total_photos,
         total_pigs: merged.total_pigs
       }
-      dropSuperseded(merged.superseded)
+      removeRecords(merged.superseded)
       await new Promise(r => {
         let cur = store.state.uploadProgress
         const tick = setInterval(() => {
@@ -326,34 +346,41 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
       loadBatchFullImages()
     } catch (e) {
       stopTick()
-      // 用户取消/刷新：告知服务端停手，避免它继续跑完本批
-      if (e.name === 'AbortError') cancelOnServer(batchToken)
-      // 已完成的部分仍已写入数据库，展示出来并提示，避免用户重传造成重复计数
-      if (chunkResults.length) {
-        const merged = mergeChunkResults(chunkResults)
-        batchFullLoading.value = true
-        batchResults.value = {
-          success: true,
-          batch_name: chunkResults[0]?.batch_name || '未命名批次',
-          units: merged.units,
-          total_photos: merged.total_photos,
-          total_pigs: merged.total_pigs
-        }
-        dropSuperseded(merged.superseded)
-      } else if (e.name === 'AbortError' && prevBatchResults) {
-        batchResults.value = prevBatchResults
-        batchImageIndex.value = prevBatchImageIndex
-      }
-      closeNotify()
+
       if (e.name === 'AbortError') {
+        // 用户主动取消/刷新：告知服务端停手，已完成部分仍然保留展示（用户自己中断）
+        cancelOnServer(batchToken)
+        if (chunkResults.length) {
+          const merged = mergeChunkResults(chunkResults)
+          batchFullLoading.value = true
+          batchResults.value = {
+            success: true,
+            batch_name: chunkResults[0]?.batch_name || '未命名批次',
+            units: merged.units,
+            total_photos: merged.total_photos,
+            total_pigs: merged.total_pigs
+          }
+          removeRecords(merged.superseded)
+        } else if (prevBatchResults) {
+          batchResults.value = prevBatchResults
+          batchImageIndex.value = prevBatchImageIndex
+        }
+        closeNotify()
         const done = chunkResults.length
         const msg = done ? `已取消：完成 ${done}/${totalChunks} 批，结果仅含已完成部分` : '批量检测已取消'
         store.dispatch('addLog', { msg, type: 'info' })
         showNotify('info', '已取消', msg)
       } else {
-        showNotify('error', '批量检测失败', e.message || '请重试')
-        store.dispatch('addLog', { msg: '批次检测失败: ' + e.message, type: 'error' })
-        if (chunkResults.length) loadBatchFullImages()
+        // 识别失败：清空结果、回滚本次已写入的记录，回到"已选文件夹、未识别"状态
+        const writtenIds = collectRecordIds(chunkResults)
+        batchResults.value = null
+        batchImageIndex.value = 0
+        batchFullLoading.value = false
+        store.commit('SET_PROGRESS', 0)
+        closeNotify()
+        showNotify('error', '批量检测失败', '识别过程异常，请重新尝试')
+        store.dispatch('addLog', { msg: '批次检测失败：' + e.message, type: 'error' })
+        if (writtenIds.length) await removeRecords(writtenIds, '识别失败回滚')
       }
     } finally {
       stopTick()
