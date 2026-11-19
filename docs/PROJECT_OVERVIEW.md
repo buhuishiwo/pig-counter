@@ -115,7 +115,6 @@ pig-counter/                   # 仓库根 = 部署根
 │   ├── USER_JOURNEY.md        # 用户旅程图
 │   ├── KNOWN_ISSUES.md        # 功能层已知限制
 │   ├── refs/                  # OCR 选型历史存档
-│   └── wheel/                 # 协作飞轮（本地维护，不入库）
 ├── nginx.conf
 ├── docker-compose.yml
 └── README.md

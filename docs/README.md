@@ -2,7 +2,7 @@
 
 **最后更新**: 2026-11-18
 
-本目录分两类文档，**每类内容只维护一份**，避免同一件事出现两个互相矛盾的说法。
+**每类内容只维护一份**，避免同一件事出现两个互相矛盾的说法。
 
 ---
 
@@ -18,29 +18,13 @@
 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 功能层已知限制（OCR 识别边界等） | 发现/解决限制时 |
 | [`refs/`](refs/) | OCR 选型历史研究存档（**已废弃方案**，不代表当前实现） | 不再更新（存档） |
 
-## 二、协作飞轮（`wheel/`，**本地维护，不入库**）
-
-飞轮文档记录"下一步做什么 / 做了哪些事 / 现在是什么状态"，**只保存在本地工作区，不提交 GitHub**
-（`.gitignore` 已排除 `docs/wheel/`）。目录下有：
-
-| 文档 | 回答的问题 |
-|:--|:--|
-| `wheel/HANDOVER_BRIEF.md` | **新人接手看这一页**（现状 / 资料索引 / 红线 / 前三件事） |
-| `wheel/HANDOVER_CONTEXT.md` | **现在是什么状态？**（30 秒快照 + 环境速查 + 历史） |
-| `wheel/TODO_LIST.md` | **下一步做什么？**（按优先级，每项带验收标准） |
-| `wheel/DEPLOYMENT_LOG.md` | **做了哪些事？踩过哪些坑？**（编号连续，只追加） |
-| `wheel/COLLABORATION_PROTOCOL.md` | 协作规则与文档格式规范 |
-
-> 这些文件在仓库历史（≤ `a5a43eb5`）里曾提交过，现已从跟踪中移除，本地文件完好。
-
 ---
 
 ## 使用约定（重要）
 
-1. **状态类文档只在 `wheel/` 维护**（本地）。`TODO_LIST`/`HANDOVER_CONTEXT`/`DEPLOYMENT_LOG` 曾在本目录下有一份副本，已于 2026-10-21 删除——那份内容与 wheel 版偏差已达 70%，是"两套说法"的根源。
-2. **`PROJECT_OVERVIEW` 只在本目录维护**，`wheel/` 下不再保留副本。
-3. **新 session 从这里开始**：读本地 `wheel/HANDOVER_CONTEXT.md` 顶部 30 秒快照恢复上下文 → 读 `wheel/TODO_LIST.md` 取当前优先项。
-4. 交叉引用时使用相对路径，例如 `refs/README.md`；引用飞轮文档写成"本地 `wheel/xxx.md`"，**不要写成 markdown 链接**（别人 clone 后没有这个文件）。
+1. **每类内容只维护一份**：技术实现只在 `PROJECT_OVERVIEW.md`，迁移方案只在 `MIGRATION_PLAN.md`，部署操作只在 `DEPLOY_HYPERV_UBUNTU.md`，功能限制只在 `KNOWN_ISSUES.md`。
+2. **交叉引用用相对路径**，例如 `../README.md`、`refs/README.md`。
+3. **新增文档前先想清楚归哪一类**：面向客户/同事的放本目录，部署操作类放 `DEPLOY_HYPERV_UBUNTU.md`，不要另起一份平行文档。
 
 ---
 

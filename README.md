@@ -53,7 +53,6 @@ pig-counter/                       # 仓库根 = 部署根
 | `docs/DEPLOY_HYPERV_UBUNTU.md` | **Windows Server 2022 + Hyper-V + Ubuntu 虚拟机部署教程（含搬数据、验收、排错、运维）** |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
 | `docs/EXECUTIVE_SUMMARY.md` / `docs/USER_JOURNEY.md` | 面向管理层的功能概览、用户旅程图 |
-| `docs/wheel/` | **协作飞轮（本地维护，不入库）**：HANDOVER_BRIEF / HANDOVER_CONTEXT / TODO_LIST / DEPLOYMENT_LOG / 协议 |
 | `docs/refs/` | OCR 选型历史研究（**已废弃方案存档**，不代表当前实现） |
 | `AGENTS.md` | AI 编码助手行为规范 |
 
@@ -159,8 +158,10 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 ### 内网生产更新流程（无公网 SSH，走离线包）
 
 内网机不在 `git` 流程里：用 `docker save` / `docker load` 传镜像，`dist/` 随包传入，
-`update.sh` 只重建 backend 容器。完整步骤与“两个必须记住的坑”（dist 不能删目录重建、重建 backend 后必须重启 nginx）见
-`docs/wheel/DEPLOYMENT_LOG.md` #169。
+`update.sh` 只重建 backend 容器。**两个必须记住的坑**：
+
+1. `dist/` 是 bind mount，更新时必须**拷进原目录**（`cp -a 新/. 旧/`）——`rm -rf` 后重建目录会让运行中的 nginx 指向已删除的 inode。
+2. 重建 backend 容器后**必须 `docker restart pig-count-nginx`**——否则 nginx 缓存旧容器 IP，表现为“首页能开、接口全 502”。
 
 > 内网 OCR 指向本地模型（`docker-compose.yml` 里 `OCR_BASE_URL` / `OCR_MODEL`，**不是** `.env`）：
 > `OCR_BASE_URL=http://39.173.23.40:18081/v1`、`OCR_MODEL=qwen3.8-27b`、`OCR_API_KEY=EMPTY`（必须非空）。
@@ -241,6 +242,6 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 > → **`v3.1`**（2026-11-18：批量上传分批 50 张/批 + 跨批去重 + 水印 OCR 适配新标准 `1单元10栏`
 > + 门牌照跳过 + 编辑标注翻页/自动保存 + 推理搬线程；同日内网生产就地更新上线）
 
-> 部署现状：云端预发布与客户内网生产**均为 v3.1**，详见本地飞轮文档 `docs/wheel/DEPLOYMENT_LOG.md` #169（不入库）。
+> 部署现状：云端预发布与客户内网生产**均为 v3.1**。
 
 > 时间说明：`created_at` 均为 MySQL `TIMESTAMP`，内部存 UTC，读时按会话时区换算。mysql 容器必须设 `TZ=Asia/Shanghai`（`docker-compose.yml` 已配），否则页面时间会早 8 小时、「今日」日界会错到北京时间 08:00。
