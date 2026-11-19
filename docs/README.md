@@ -18,26 +18,29 @@
 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 功能层已知限制（OCR 识别边界等） | 发现/解决限制时 |
 | [`refs/`](refs/) | OCR 选型历史研究存档（**已废弃方案**，不代表当前实现） | 不再更新（存档） |
 
-## 二、协作飞轮（`wheel/`，人机协作的状态机）
+## 二、协作飞轮（`wheel/`，**本地维护，不入库**）
 
-按 [`wheel/COLLABORATION_PROTOCOL.md`](wheel/COLLABORATION_PROTOCOL.md) 维护，**记录"下一步做什么 / 做了哪些事 / 现在是什么状态"**：
+飞轮文档记录"下一步做什么 / 做了哪些事 / 现在是什么状态"，**只保存在本地工作区，不提交 GitHub**
+（`.gitignore` 已排除 `docs/wheel/`）。目录下有：
 
-| 文档 | 回答的问题 | 更新时机 |
-|:--|:--|:--|
-| [`wheel/HANDOVER_CONTEXT.md`](wheel/HANDOVER_CONTEXT.md) | **现在是什么状态？**（30 秒快照 + 环境速查 + 历史） | 每次 session 结束 |
-| [`wheel/HANDOVER_BRIEF.md`](wheel/HANDOVER_BRIEF.md) | **新人接手看这一页**（现状 / 链接索引 / 红线 / 前三件事） | 每次交接 / 上线变化时 |
-| [`wheel/TODO_LIST.md`](wheel/TODO_LIST.md) | **下一步做什么？**（按优先级，每项带验收标准） | 任务完成或新增时 |
-| [`wheel/DEPLOYMENT_LOG.md`](wheel/DEPLOYMENT_LOG.md) | **做了哪些事？踩过什么坑？**（编号连续，只追加） | 交付或踩坑时 |
-| [`wheel/COLLABORATION_PROTOCOL.md`](wheel/COLLABORATION_PROTOCOL.md) | 协作规则与文档格式规范 | 规范本身变化时 |
+| 文档 | 回答的问题 |
+|:--|:--|
+| `wheel/HANDOVER_BRIEF.md` | **新人接手看这一页**（现状 / 资料索引 / 红线 / 前三件事） |
+| `wheel/HANDOVER_CONTEXT.md` | **现在是什么状态？**（30 秒快照 + 环境速查 + 历史） |
+| `wheel/TODO_LIST.md` | **下一步做什么？**（按优先级，每项带验收标准） |
+| `wheel/DEPLOYMENT_LOG.md` | **做了哪些事？踩过哪些坑？**（编号连续，只追加） |
+| `wheel/COLLABORATION_PROTOCOL.md` | 协作规则与文档格式规范 |
+
+> 这些文件在仓库历史（≤ `a5a43eb5`）里曾提交过，现已从跟踪中移除，本地文件完好。
 
 ---
 
 ## 使用约定（重要）
 
-1. **状态类文档只在 `wheel/` 维护**。`TODO_LIST`、`HANDOVER_CONTEXT`、`DEPLOYMENT_LOG` 曾在本目录下有一份副本，已于 2026-10-21 删除——那份内容与 wheel 版偏差已达 70%，是"两套说法"的根源。
+1. **状态类文档只在 `wheel/` 维护**（本地）。`TODO_LIST`/`HANDOVER_CONTEXT`/`DEPLOYMENT_LOG` 曾在本目录下有一份副本，已于 2026-10-21 删除——那份内容与 wheel 版偏差已达 70%，是"两套说法"的根源。
 2. **`PROJECT_OVERVIEW` 只在本目录维护**，`wheel/` 下不再保留副本。
-3. **新 session 从这里开始**：读 `wheel/HANDOVER_CONTEXT.md` 顶部 30 秒快照恢复上下文 → 读 `wheel/TODO_LIST.md` 取当前优先项。
-4. 交叉引用其它文档时使用相对路径，例如 `wheel/TODO_LIST.md`、`refs/README.md`。
+3. **新 session 从这里开始**：读本地 `wheel/HANDOVER_CONTEXT.md` 顶部 30 秒快照恢复上下文 → 读 `wheel/TODO_LIST.md` 取当前优先项。
+4. 交叉引用时使用相对路径，例如 `refs/README.md`；引用飞轮文档写成"本地 `wheel/xxx.md`"，**不要写成 markdown 链接**（别人 clone 后没有这个文件）。
 
 ---
 

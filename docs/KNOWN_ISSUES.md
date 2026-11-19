@@ -1,6 +1,6 @@
 # KNOWN_ISSUES — 已知问题
 
-> 最后更新：2026-11-18｜以下均为**功能层**已知限制，不含运维待办（运维待办见 `wheel/TODO_LIST.md`）
+> 最后更新：2026-11-18｜以下均为**功能层**已知限制，不含运维待办（运维待办见本地 `wheel/TODO_LIST.md`）
 
 ## OCR 已知限制（后续优化，低优先级）
 
@@ -13,7 +13,7 @@ v3.1 的水印识别流程是"原样输出全文 1 次 → 4 个字段各最多�
 - **附加风险**：记录在调 OCR **之前**已写库，用户反复重试会产生重复记录
 - **判据**：`ping <host>` 通但 `curl http://<host>:<port>/v1/models` **超时**（而不是 `Connection refused`）= 端口被白名单/安全组挡住
 - **缓解（已用）**：把 `OCR_API_KEY` 置空——`watermark_ocr.py` 首行 `if not OCR_API_KEY: return None`，一次请求都不发，单张恢复 2~5 秒；代价是不再写 `watermark_data`（单元/栏号仍可从文件名兜底）
-- **后续方向**：`_call_ocr` 超时降到 5~10 秒 + 连续失败即熔断本轮剩余图片（见 `wheel/TODO_LIST.md` P9 Task 18）
+- **后续方向**：`_call_ocr` 超时降到 5~10 秒 + 连续失败即熔断本轮剩余图片（见本地 `wheel/TODO_LIST.md` P9 Task 18）
 
 ### qwen-vl-ocr 分辨率上限
 

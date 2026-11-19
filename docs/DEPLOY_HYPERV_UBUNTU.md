@@ -1743,4 +1743,4 @@ docker compose ps
 | `.env` | 仅 `OCR_API_KEY` 与项目名 | **新建**，不入库 |
 
 唯一需要新建的是宿主上的 `.env`。如果部署过程中发现必须改 compose（例如加 `--max-allowed-packet`），
-把它当成"目标环境差异"记到 `docs/wheel/DEPLOYMENT_LOG.md`，不要静默改完就算。
+把它当成"目标环境差异"记到 本地飞轮文档 `docs/wheel/DEPLOYMENT_LOG.md`，不要静默改完就算。

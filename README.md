@@ -49,14 +49,11 @@ pig-counter/                       # 仓库根 = 部署根
 |:--|:--|
 | `README.md`（本文件） | 项目概览、本地开发、Docker 部署、远程发版流程、API 端点、关键配置 |
 | `docs/PROJECT_OVERVIEW.md` | 技术栈、目录结构、业务逻辑总览、已知问题 |
-| `docs/wheel/HANDOVER_CONTEXT.md` | 交接上下文与阶段进展（30 秒快照，含 2026-07~10 变更） |
 | `docs/MIGRATION_PLAN.md` | **迁移到客户内网新服务器的方案、盘点与待决策项** |
 | `docs/DEPLOY_HYPERV_UBUNTU.md` | **Windows Server 2022 + Hyper-V + Ubuntu 虚拟机部署教程（含搬数据、验收、排错、运维）** |
-| `docs/wheel/TODO_LIST.md` | 待办事项与技术债清单（按优先级，每项带验收标准） |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
-| `docs/wheel/DEPLOYMENT_LOG.md` | 部署问题与变更日志（编号连续，规则：只追加） |
 | `docs/EXECUTIVE_SUMMARY.md` / `docs/USER_JOURNEY.md` | 面向管理层的功能概览、用户旅程图 |
-| `docs/wheel/COLLABORATION_PROTOCOL.md` | 人机协作协议与飞轮文档格式规范 |
+| `docs/wheel/` | **协作飞轮（本地维护，不入库）**：HANDOVER_BRIEF / HANDOVER_CONTEXT / TODO_LIST / DEPLOYMENT_LOG / 协议 |
 | `docs/refs/` | OCR 选型历史研究（**已废弃方案存档**，不代表当前实现） |
 | `AGENTS.md` | AI 编码助手行为规范 |
 
@@ -244,6 +241,6 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 > → **`v3.1`**（2026-11-18：批量上传分批 50 张/批 + 跨批去重 + 水印 OCR 适配新标准 `1单元10栏`
 > + 门牌照跳过 + 编辑标注翻页/自动保存 + 推理搬线程；同日内网生产就地更新上线）
 
-> 部署现状：云端预发布与客户内网生产**均为 v3.1**，详见 [`docs/wheel/DEPLOYMENT_LOG.md`](docs/wheel/DEPLOYMENT_LOG.md) #169。
+> 部署现状：云端预发布与客户内网生产**均为 v3.1**，详见本地飞轮文档 `docs/wheel/DEPLOYMENT_LOG.md` #169（不入库）。
 
 > 时间说明：`created_at` 均为 MySQL `TIMESTAMP`，内部存 UTC，读时按会话时区换算。mysql 容器必须设 `TZ=Asia/Shanghai`（`docker-compose.yml` 已配），否则页面时间会早 8 小时、「今日」日界会错到北京时间 08:00。

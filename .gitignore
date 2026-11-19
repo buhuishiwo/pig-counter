@@ -31,3 +31,6 @@ Thumbs.db
 
 # Windows 下载标记文件（NTFS 备用数据流）
 *:Zone.Identifier
+
+# 协作飞轮文档（只留本地，不入库）
+docs/wheel/
