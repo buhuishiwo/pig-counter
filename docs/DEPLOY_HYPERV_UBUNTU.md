@@ -81,7 +81,7 @@
 | 项 | 说明 |
 |:--|:--|
 | Ubuntu Server 22.04 ISO | <https://releases.ubuntu.com/22.04/> 下载 `ubuntu-22.04.x-live-server-amd64.iso`（约 2GB） |
-| 源服务器 root 权限 | `ssh root@47.110.63.70`，要能从里面导出镜像和数据库 |
+| 源服务器权限 | `ssh admin@47.110.63.70`（**root 已于 2026-11-11 禁登录**；`admin` 在 docker 组且 `sudo -n` 免密，需要 root 时加 `sudo`），要能从里面导出镜像和数据库 |
 | `OCR_API_KEY` | 水印 OCR 用，阿里云 DashScope 的 `sk-` 开头密钥。**丢了不影响识别主流程**，只是水印标签不可用 |
 | 一个固定内网 IP + 网关 + DNS | 例如 `192.168.1.50 / 255.255.255.0 / 192.168.1.1`，**必须问客户网管要**，别自己猜 |
 | Windows 侧的本地管理员权限 | 装 Hyper-V 角色需要 |
@@ -612,7 +612,7 @@ sudo chown -R $USER:$USER /opt/pig-counter
 
 | 通道 | 适用 | 命令 |
 |:--|:--|:--|
-| **A. VM 直接 scp 源服务器**（最快，1 跳） | VM 能出公网 | `scp root@47.110.63.70:/tmp/xxx /tmp/` |
+| **A. VM 直接 scp 源服务器**（最快，1 跳） | VM 能出公网 | `scp admin@47.110.63.70:/tmp/xxx /tmp/` |
 | **B. 源服务器 → Windows 宿主 → VM**（2 跳） | VM 不能出公网 | 宿主上 `scp` 两次 |
 | **C. 宿主 SMB 共享** | 文件特别大、想用资源管理器拖 | `New-SmbShare` + VM 里 `mount -t cifs` |
 
@@ -623,7 +623,7 @@ sudo chown -R $USER:$USER /opt/pig-counter
 登录源服务器：
 
 ```bash
-ssh root@47.110.63.70
+ssh admin@47.110.63.70          # root 已禁登录；需要 root 权限时用 sudo
 cd /opt/pig-counter/pig-counter
 git rev-parse --short HEAD        # 记下 commit，后面验收要用
 ```
@@ -689,10 +689,10 @@ cat pigcount.sha256
 ```powershell
 New-Item -ItemType Directory -Force -Path D:\xfer | Out-Null
 cd D:\xfer
-scp root@47.110.63.70:/tmp/pigcount-src-*.tar.gz .
-scp root@47.110.63.70:/tmp/pigcounter-db-*.sql.gz .
-scp root@47.110.63.70:/tmp/pigcount-images.tar .
-scp root@47.110.63.70:/tmp/pigcount.sha256 .
+scp admin@47.110.63.70:/tmp/pigcount-src-*.tar.gz .
+scp admin@47.110.63.70:/tmp/pigcounter-db-*.sql.gz .
+scp admin@47.110.63.70:/tmp/pigcount-images.tar .
+scp admin@47.110.63.70:/tmp/pigcount.sha256 .
 ```
 
 **第二跳**：Windows 宿主 → VM

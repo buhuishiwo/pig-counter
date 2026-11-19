@@ -2,8 +2,8 @@
 
 **文档说明**: 记录项目落地过程中的关键里程碑、执行步骤、遇到的问题及解决方案。降低上下文切换成本，确保多轮次对话或人员更替时的无缝衔接。
 
-**当前状态**: v3.0 稳定运行中 — 已完成生产化与运维加固（时区/端口/依赖/目录结构），当前处于迁移准备阶段
-**最后更新**: 2026-10-21
+**当前状态**: **v3.1** 已上线两套环境 —— 云端预发布 `47.110.63.70:8888`、客户内网生产（自有域名 → 静态公网 IP → cpolar 隧道 → `192.168.250.2:8888`）
+**最后更新**: 2026-11-18
 
 ---
 
@@ -16,11 +16,19 @@
   * 数据库: MySQL 8.0 本地 — 库 `pig_counter`，用户 `root`
   * 模型: ONNX (`model/pig_count.onnx`)，OpenCV DNN 推理
   * Python: `.venv` 虚拟环境
-* **远程生产环境**:
-  * 服务器: `47.110.63.70` — root 免密 SSH
-  * 部署方式: Docker Compose
-  * 组件端口: Nginx(8888, **唯一对外**) + Backend(127.0.0.1:8866) + MySQL(127.0.0.1:3307)
-  * 项目路径: `/opt/pig-counter/pig-counter/`（代码结构 `backend/` + `frontend/`）
+* **客户内网生产（当前生产）**:
+  * 访问链路: 客户自有域名 → 静态公网 IP → cpolar 隧道 → Ubuntu VM `192.168.250.2:8888`
+  * 宿主: Windows Server 2022 + Hyper-V（VM 走 NAT，宿主 `192.168.250.1`），详见 `../DEPLOY_HYPERV_UBUNTU.md`
+  * SSH: 只能从 Windows 宿主 `ssh ubuntu@192.168.250.2`（无公网 SSH）
+  * 部署路径: `/opt/pig-counter`（仓库根）
+  * 数据卷: `pig-counter_mysql_data`（2026-11-18 时 2928 条记录）
+  * 镜像存储: **containerd snapshotter**（`docker info` → `io.containerd.snapshotter.v1`）——同一个构建在内网显示 `e7cc5129ff62 / 1.49GB`，在云端传统存储显示 `0fad11a9ad41 / 724MB`，属口径差异，非两个镜像
+  * OCR: 内网本地模型 `http://39.173.23.40:18081/v1` + `qwen3.8-27b`（需对方放行本侧出口公网 IP 到 18081/TCP）
+* **云端预发布环境**:
+  * 服务器: `47.110.63.70`（Alibaba Cloud Linux 3）—— `ssh admin@…`（免密，root 已禁登录，命令需 `sudo`）
+  * 部署路径: `/opt/pig-counter/pig-counter/`（代码结构 `backend/` + `frontend/`）
+  * OCR: 阿里云 `dashscope` + `qwen-vl-ocr`（该机有公网）
+  * 用途: 发版前验证；镜像构建与离线包打在这里
   * 数据持久化: Docker 命名卷 `pig-counter_mysql_data`（含全部业务数据，**无备份**）
   * Git 远程: HTTPS (`https://github.com/buhuishiwo/pig-counter.git`) — 服务器无 SSH key，偶发 443 超时需重试
 * **关键配置**:
@@ -196,3 +204,5 @@
 | 166 | 2026-11-18 | 失败提示改为统一通知卡 + 失败即清空结果并回滚本次记录 | **背景**: 原实现失败时会在右上角弹错误卡（描述里带"收到 X 字节，应为 Y 字节"等技术细节），同时保留已完成批次的结果继续展示；用户容易把残缺结果当完整报表导出，且技术细节对现场人员无意义。**方案**: ① 失败提示统一走现有 NotificationCard（error，6 秒自动关闭，沿用既有通知逻辑）：标题「批量检测失败」、描述「识别过程异常，请重新尝试」，技术细节只写 system_logs；② 失败时**清空结果**，界面回到"已选文件夹、未识别"状态，用户重新点「开始识别」即可重试；③ 清空前调用 `/api/batch/dedupe` **回滚本次已写入的记录**（按本次返回的 record_id，限最近 1 天），避免留下界面上看不到的脏数据、也避免重跑产生重复；④ **用户主动取消的行为不变**（保留已完成部分并提示"已取消：完成 N/M 批"）。**不做**: 结果区横幅、卡片上的重试按钮、"连续 3 次失败"档位、emoji。**验证**: 构建通过；失败分支逻辑走 `removeRecords(recorIds, '识别失败回滚')`，与跨批去重共用同一接口（该接口已实测可删并级联 watermark_data）。 | ✅ 已交付 |
 | 167 | 2026-11-18 | 失败回滚兜底：待回滚队列（localStorage） | **发现**: Playwright 实测（停止 backend 容器制造 5xx）发现——失败提示、结果清空、自动重试（502→重试→504）均正常，但"失败即回滚本次记录"这一步会因为**后端此刻不可用**而发不出去，导致库里留存 12 条界面上看不到的孤儿记录。**方案**: `removeRecords()` 失败时把 record_id 写入 `localStorage.pigcount_pending_rollback`；应用启动 3 秒后与每次开始识别前各调用一次 `flushPendingRollback()` 补做，成功后清空队列并写日志「已补做上次失败批次的数据回滚（N 条）」。**验证**（Playwright + 真实容器启停）: ① 基线 3161 条 → 第 1 批写入 12 条 → 停止后端 → 第 2 批失败（日志：`批次检测失败：第 2/11 批失败：HTTP 502`，伴随 `重试第 2/11 批`）；② 界面：通知卡「批量检测失败 / 识别过程异常，请重新尝试」，结果区清空并回到文件夹树；③ 后端不可用期间回滚入队；④ 恢复后端并刷新页面 → 日志出现「已补做上次失败批次的数据回滚（12 条）」，库内记录数较基线回到 **0**。 | ✅ 已交付 |
 | 168 | 2026-11-18 | v3.1 交付：批量上传分批 + OCR 新标准 + 编辑体验 | **范围**: 2026-11-12 ~ 11-18 累计交付，版本号 **v3.1**（tag 指向本次提交）。**功能**: ① 前端分批上传（50 张/批）+ 真实进度 + 取消令牌 + `skip_excel`；② 跨批同栏去重（`/api/batch/dedupe`，限最近 1 天）；③ 失败处理：自动重试 2 次 → 通知卡「识别过程异常，请重新尝试」+ 清空结果 + 回滚本次记录（后端不可用入 `localStorage` 队列，恢复后补做）；④ 水印 OCR 改「原样输出 + 标签解析 + 定向补问」，兼容 `1单元10栏`，丢掉 GPS/日期/坐标；⑤ 门牌照 `单元号.jpg` 跳过；⑥ 编辑标注右下角翻页器 + 翻页自动保存（不关弹窗/不闪），底图按 `source_path` 定位；⑦ 推理与 Excel 生成改 `asyncio.to_thread`，识别期间 health 15s → 0.3s，统计页识别中不刷新。**验证**: 39 张（`新新标准`）全字段 36/36；504 张 / 11 批 / 1082 秒，库内 36 条 = 界面 36 栏；Playwright 实测失败路径（停后端制造 5xx）：重试 → 失败提示 → 结果清空 → 后端恢复后自动补做回滚（12 条归零）。**运维**: 云预发 1.87GB 内存下 `npm run build` 会 OOM，前端产物需本地构建后传入；SSH 用户为 `admin`（root 已禁登录）。 | ✅ 已交付 |
+| 169 | 2026-11-18 | 内网生产就地更新到 v3.1（离线包 + 一键更新脚本） | **背景**: 客户内网生产（Hyper-V 里的 Ubuntu 22.04，`192.168.250.2`）仍是 2026-10-31 构建的 v3.0（镜像 `a989a76b9f6a`），需升到 v3.1；该机无公网 SSH，只能向日葵 → Windows 宿主 → `ssh ubuntu@192.168.250.2`。**方案**: 在云端预发布机打离线包（`pigcount-backend-v3.1.tar.gz` 274MB + `pigcount-src.tar.gz` 23MB + sha256，commit `f54509bd` / tag v3.1），Windows 中转后 `scp` 入 VM；用 `update.sh` 做**就地更新**——只换 `dist/`、`docker load` 后端镜像、把 `docker-compose.yml` 的 OCR 三行改成本地模型、**只重建 backend** 容器。**与"全新装机"的区别**: 不删数据、不动 `.env`、不重建 mysql/nginx、不重新建表（`mysql_init.sql` 自 10-21 未变，无需迁移 schema）；不覆盖现场的 `nginx.conf` / `backend/Dockerfile`（含内网镜像源补丁）。**两个必须记住的坑**: ① `dist` 以 bind mount 挂给 nginx，**必须拷进原目录**（`cp -a 新/. 旧/`），`rm -rf` 后重建目录会让运行中的 nginx 指向已删除的 inode；② backend 重建后 **必须 `docker restart pig-count-nginx`**，否则 nginx 缓存旧容器 IP，表现为"首页能开、接口全 502"。**结果**: 三容器 Up、`/api/health` healthy、`model_exists:true`、`/api/farms`/`/api/detection-stats`/首页 均 200、记录数 2928 → 2928 未丢；回滚点 `pig-counter-backend:before-20261118-234505`，配置备份 `docker-compose.yml.bak-20261118-234505`。**OCR 切换**: compose 里那三行早在 11-05 就改成内网本地模型（`39.173.23.40:18081` / `qwen3.8-27b` / `EMPTY`），但**一直没重建容器**，故运行中的 env 仍是阿里云——本次 `--force-recreate` 才让它第一次真正生效；本地模型端口起初被防火墙 DROP（`ping` 通、TCP 超时），对方放行本侧出口 IP 后恢复。**访问方式定案**: 客户自有域名 + 静态公网 IP + cpolar 隧道（客户客户端需经隧道访问，非临时方案）。 | ✅ 已交付 |
+| 170 | 2026-11-18 | OCR 后端不可达时单张识别卡约 600 秒 | **发现**: 内网更新后"上传一张图识别老半天"，nginx 日志 `POST /api/predict-batch 499`（客户端 60 秒放弃），后端日志里连请求完成行都没有。**定位**: v3.1 的 `recognize_watermark()` 是"原样输出 1 次 + 4 个字段各最多问 2 次 + JSON 兜底 1 次"≈ **10 次请求**，每次 `httpx.AsyncClient(timeout=60.0)`；OCR 端口被防火墙 DROP 时每次都要等满超时 → **单张 ≈ 600 秒**，批量按 5 并发同样被拖死。云端测 2.2s/张是因为 OCR 秒回。**附加风险**: 记录在调 OCR **之前**已写库，所以用户反复重试会产生重复记录。**方案**: 临时把 `OCR_API_KEY` 置空（`watermark_ocr.py` 首行 `if not OCR_API_KEY: return None`，一次请求都不发），单张恢复 2~5 秒；等白名单放行后再填回非空值。**判据（写进排查手册）**: `ping <host>` 通但 `curl http://<host>:<port>/v1/models` 超时（而非 `Connection refused`）= 端口被安全组/防火墙 DROP。**后续**: `_call_ocr` 超时降到 5~10 秒 + "连续失败即熔断本轮剩余图片"，见 `TODO_LIST` P9。 | ✅ 已缓解（临时关闭 OCR），根治见 TODO_LIST |

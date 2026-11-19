@@ -111,7 +111,8 @@ docker compose up -d --build
 **端口只对外开 `8888`**。`8866`（无鉴权的推理接口）和 `3307`（MySQL root）都只绑在 `127.0.0.1`，避免绕过 nginx 直打后端、也避免数据库端口暴露。nginx 是通过 `pig-count-network` 访问 `backend:8866` 的，不依赖宿主端口。需要从本机连数据库时用 SSH 隧道：
 
 ```bash
-ssh -L 3307:127.0.0.1:3307 root@47.110.63.70
+ssh -L 3307:127.0.0.1:3307 admin@47.110.63.70
+# root 已于 2026-11-11 禁登录，用 admin（在 docker 组且 sudo -n 免密）
 # 然后本地连 127.0.0.1:3307
 ```
 
@@ -124,14 +125,21 @@ ssh -L 3307:127.0.0.1:3307 root@47.110.63.70
 
 ## 远程服务器
 
-生产地址：`http://47.110.63.70:8888`
+两套环境，**都是 v3.1**（tag `v3.1` / commit `f54509bd`）：
+
+| 环境 | 地址 | 用途 |
+|:-----|:-----|:-----|
+| 客户内网**生产** | 自有域名 → 静态公网 IP → cpolar 隧道 → `192.168.250.2:8888` | 客户实际使用；Windows Server 2022 + Hyper-V + Ubuntu 22.04 VM；只能从宿主 `ssh ubuntu@192.168.250.2` |
+| 云端**预发布** | `http://47.110.63.70:8888` | 发版前验证 + 离线镜像包构建机（Alibaba Cloud Linux 3） |
+
+云端操作：
 
 ```bash
-ssh root@47.110.63.70
+ssh admin@47.110.63.70        # root 已禁登录，命令需 sudo
 cd /opt/pig-counter/pig-counter
 ```
 
-发版流程（**不要用 `git pull`**：`dist/` 不入库、`.env` 不入库，且服务器工作区可能有未提交改动，`git pull` 会失败或冲突）：
+### 云端发版流程（**不要用 `git pull`**：`dist/` 不入库、`.env` 不入库，且服务器工作区可能有未提交改动）
 
 ```bash
 # 1) 同步代码到远端 main（会丢弃服务器上的未提交改动）
@@ -150,6 +158,16 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 ```
 
 服务器上需自备 `.env`（含 `OCR_API_KEY`、`DB_PASSWORD`），它只被 `docker compose` 用于变量替换，不会进镜像、也不入库。
+
+### 内网生产更新流程（无公网 SSH，走离线包）
+
+内网机不在 `git` 流程里：用 `docker save` / `docker load` 传镜像，`dist/` 随包传入，
+`update.sh` 只重建 backend 容器。完整步骤与“两个必须记住的坑”（dist 不能删目录重建、重建 backend 后必须重启 nginx）见
+`docs/wheel/DEPLOYMENT_LOG.md` #169。
+
+> 内网 OCR 指向本地模型（`docker-compose.yml` 里 `OCR_BASE_URL` / `OCR_MODEL`，**不是** `.env`）：
+> `OCR_BASE_URL=http://39.173.23.40:18081/v1`、`OCR_MODEL=qwen3.8-27b`、`OCR_API_KEY=EMPTY`（必须非空）。
+> 端口不通时单张识别会卡约 10 分钟，见 `docs/KNOWN_ISSUES.md`。
 
 > `git fetch` 偶尔会因为服务器到 GitHub 的 HTTPS 连接超时报错（实测出现过连续两次失败），重试即可。若持续不通，可在本地打 `git bundle` 后用 scp 传上去再 `git fetch <bundle>`。
 
@@ -219,9 +237,13 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 
 ## 版本
 
-当前版本：**v3.0**（tag `v3.0`，部署分支 `main`）
+当前版本：**v3.1**（tag `v3.1` / commit `f54509bd`，部署分支 `main`）
 
 > 版本线：`v0.3`（原型期）→ `v1.0`（2026-06-02 核心功能）→ `v2.0`（2026-07-07 竖屏支持）
-> → **`v3.0`**（2026-07-13 水印 OCR + 生产级日志系统；此后仅运维加固与文档整理，无功能变更）
+> → `v3.0`（2026-07-13 水印 OCR + 生产级日志系统）→ `v3.0.1`（修复前锚点）
+> → **`v3.1`**（2026-11-18：批量上传分批 50 张/批 + 跨批去重 + 水印 OCR 适配新标准 `1单元10栏`
+> + 门牌照跳过 + 编辑标注翻页/自动保存 + 推理搬线程；同日内网生产就地更新上线）
+
+> 部署现状：云端预发布与客户内网生产**均为 v3.1**，详见 [`docs/wheel/DEPLOYMENT_LOG.md`](docs/wheel/DEPLOYMENT_LOG.md) #169。
 
 > 时间说明：`created_at` 均为 MySQL `TIMESTAMP`，内部存 UTC，读时按会话时区换算。mysql 容器必须设 `TZ=Asia/Shanghai`（`docker-compose.yml` 已配），否则页面时间会早 8 小时、「今日」日界会错到北京时间 08:00。

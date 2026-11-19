@@ -1,8 +1,8 @@
 # 项目总览：智慧猪群识别系统 (Pig Count)
 
-**产品版本**: v3.0（tag `v3.0`）
-**文档版本**: v2.2
-**最后更新**: 2026-10-21
+**产品版本**: v3.1（tag `v3.1` / commit `f54509bd`）
+**文档版本**: v2.3
+**最后更新**: 2026-11-18
 
 ---
 
@@ -31,9 +31,17 @@ AI 驱动的猪只计数系统。用户上传猪群图片 → ONNX 模型检测 
 
 ## 当前运行方式
 
-### 生产（远程服务器，Docker）
+### 生产（客户内网 VM，Docker）
 
-服务器：`root@47.110.63.70`，目录 `/opt/pig-counter/pig-counter`，访问 `http://47.110.63.70:8888`。
+访问链路：客户自有域名 → 静态公网 IP → cpolar 隧道 → `192.168.250.2:8888`。
+
+宿主为 Windows Server 2022 + Hyper-V，Ubuntu 22.04 VM 走 NAT；只能从宿主 `ssh ubuntu@192.168.250.2`。
+部署目录 `/opt/pig-counter`（仓库根），三容器同上。部署与升级流程见根目录 `README.md` 的「远程服务器」一节。
+
+### 云端预发布（Aliyun，Docker）
+
+服务器：`ssh admin@47.110.63.70`（**root 已禁登录**，需 `sudo`），目录 `/opt/pig-counter/pig-counter`，访问 `http://47.110.63.70:8888`。
+用于发版前验证与离线镜像包构建；该机 OCR 走阿里云 `dashscope`，内网生产走本地模型。
 
 三容器：`pig-count-nginx`（唯一对外端口 8888）、`pig-count-backend`（`127.0.0.1:8866`）、`pig-count-mysql`（`127.0.0.1:3307`）。
 

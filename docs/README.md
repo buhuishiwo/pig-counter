@@ -1,6 +1,6 @@
 # docs/ 文档导航
 
-**最后更新**: 2026-10-21
+**最后更新**: 2026-11-18
 
 本目录分两类文档，**每类内容只维护一份**，避免同一件事出现两个互相矛盾的说法。
 
@@ -25,6 +25,7 @@
 | 文档 | 回答的问题 | 更新时机 |
 |:--|:--|:--|
 | [`wheel/HANDOVER_CONTEXT.md`](wheel/HANDOVER_CONTEXT.md) | **现在是什么状态？**（30 秒快照 + 环境速查 + 历史） | 每次 session 结束 |
+| [`wheel/HANDOVER_BRIEF.md`](wheel/HANDOVER_BRIEF.md) | **新人接手看这一页**（现状 / 链接索引 / 红线 / 前三件事） | 每次交接 / 上线变化时 |
 | [`wheel/TODO_LIST.md`](wheel/TODO_LIST.md) | **下一步做什么？**（按优先级，每项带验收标准） | 任务完成或新增时 |
 | [`wheel/DEPLOYMENT_LOG.md`](wheel/DEPLOYMENT_LOG.md) | **做了哪些事？踩过什么坑？**（编号连续，只追加） | 交付或踩坑时 |
 | [`wheel/COLLABORATION_PROTOCOL.md`](wheel/COLLABORATION_PROTOCOL.md) | 协作规则与文档格式规范 | 规范本身变化时 |
