@@ -104,13 +104,6 @@ def _cn_to_arabic(text: str) -> str:
     return _CN_SEQ.sub(repl, text)
 
 
-_EMPTY = {
-    "time": "", "location": "", "building": "",
-    "unit_name": "", "pen_number": "", "count": None,
-    "storage_unit": "", "raw_text": "",
-}
-
-
 def _parse_count(raw) -> int | None:
     if raw is None:
         return None
