@@ -17,10 +17,13 @@
         </div>
       </div>
       <div class="stats-header-right">
-        <div class="last-update" v-if="lastUpdateTime">
+        <div class="last-update" v-if="isAnalyzing">
+          识别进行中 · 结束后自动刷新
+        </div>
+        <div class="last-update" v-else-if="lastUpdateTime">
           更新于 {{ lastUpdateTime }}
         </div>
-        <button class="refresh-btn" @click="loadAll" :disabled="loading || isAnalyzing" :title="isAnalyzing ? '批量识别进行中，结束后自动刷新' : '刷新数据'">
+        <button class="refresh-btn" @click="loadAll" :disabled="loading || isAnalyzing" :title="isAnalyzing ? '识别进行中，结束后自动刷新' : '刷新数据'">
           <svg :class="{ spinning: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
@@ -637,9 +640,9 @@ export default {
   },
 
   created() {
-    // 批量识别进行中不拉数据：后端推理占满事件循环，请求会挂住，
-    // 页面会长时间停在 0 / 空状态。等识别结束后由 watch isAnalyzing 统一刷新。
-    if (!this.isAnalyzing) this.loadAll()
+    // 识别中也照常拉数据：推理已搬到线程池（77eba9b6），统计接口不再被阻塞，
+    // 实测识别期间 20ms 内返回。此前"识别中不拉"会让首次进入统计页的显示停在 0。
+    this.loadAll()
   },
 
   mounted() {
@@ -666,8 +669,9 @@ export default {
   },
 
   watch: {
-    // 批量识别结束→刷新一次，数据此时才包含新记录
+    // 识别中：每 5 秒刷新一次，数字随完成的图片增长；识别结束：停轮询并收尾刷新一次
     isAnalyzing(val) {
+      // 识别中不轮询：页面定格在识别前的数据；结束（或中途进入页面时）统一刷新一次
       if (!val) this.loadAll()
     },
     // 监听时间序列数据变化，自动更新图表
@@ -682,12 +686,15 @@ export default {
 
   methods: {
     async loadAll() {
-      if (this.isAnalyzing) return
       this.loading = true
-      await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadGallery(), this.loadTimeSeriesData()])
+      // 先拉轻量接口（统计/猪场/趋势）：合计 ~0.2s，页面立刻渲染出来
+      await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadTimeSeriesData()])
       this.lastUpdateTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       this._syncCache()
       this.loading = false
+      // 画廊是重接口（12 张缩略图 ≈ 2MB / 4s，隧道上更慢），放到最后单独加载，
+      // 不阻塞页面切换——否则用户会觉得点了"统计页面"没反应
+      this.loadGallery()
     },
 
     /** 把当前数据写回页面缓存（离开统计页再回来时直接展示） */
