@@ -14,10 +14,11 @@ export function useBatch({ showNotify, showToastWithProgress, updateToastProgres
   const showFolderTree = ref(false)
   const _batchAbortCtrl = ref(null)
 
-  // 每批张数：50 张约 1.6 分钟（实测 1.9s/张），取消时最多白烧 1.6 分钟，且单批内存更低
-  const CHUNK_SIZE = 50
-  // 批内进度估算用（实测约 1.04s 推理 + OCR，端到端约 1.9s/张）
-  const MS_PER_PHOTO = 2000
+  // 每批张数：内网 qwen3.8-27b 实测 ~15.4s/张（推理 0.35s + OCR ~15s），
+  // 25 张 ≈ 385 秒，稳在 nginx proxy_read_timeout（600s）以内；50 张会 770s 触发 504。
+  const CHUNK_SIZE = 25
+  // 批内进度估算用：与上面的实测值保持一致，否则进度条会早早卡在 95%
+  const MS_PER_PHOTO = 15400
 
   /** 单批上传：一次 XHR POST /api/batch/upload */
   function uploadChunk(files, paths, farmId, abortCtrl, onUploadFrac, token) {
