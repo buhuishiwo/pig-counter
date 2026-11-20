@@ -687,10 +687,14 @@ export default {
   methods: {
     async loadAll() {
       this.loading = true
-      await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadTimeSeriesData(), this.loadGallery()])
+      // 先拉轻量接口（统计/猪场/趋势）：合计 ~0.2s，页面立刻渲染出来
+      await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadTimeSeriesData()])
       this.lastUpdateTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       this._syncCache()
       this.loading = false
+      // 画廊是重接口（12 张缩略图 ≈ 2MB / 4s，隧道上更慢），放到最后单独加载，
+      // 不阻塞页面切换——否则用户会觉得点了"统计页面"没反应
+      this.loadGallery()
     },
 
     /** 把当前数据写回页面缓存（离开统计页再回来时直接展示） */
