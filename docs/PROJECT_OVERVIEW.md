@@ -110,11 +110,10 @@ pig-counter/                   # 仓库根 = 部署根
 ├── docs/                      # 文档（导航见 docs/README.md）
 │   ├── README.md              # 文档导航与维护规则
 │   ├── PROJECT_OVERVIEW.md    # 技术总览（本文件）
-│   ├── MIGRATION_PLAN.md      # 迁移方案
 │   ├── EXECUTIVE_SUMMARY.md   # 管理层汇报
 │   ├── USER_JOURNEY.md        # 用户旅程图
 │   ├── KNOWN_ISSUES.md        # 功能层已知限制
-│   ├── refs/                  # OCR 选型历史存档
+│   ├── archive/               # 历史存档：MIGRATION_PLAN + refs（不再维护）
 ├── nginx.conf
 ├── docker-compose.yml
 └── README.md

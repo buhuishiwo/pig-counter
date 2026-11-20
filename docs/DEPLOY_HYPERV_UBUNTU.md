@@ -3,13 +3,13 @@
 > **适用场景**：把当前跑在 `47.110.63.70` 的 pig-counter（Docker Compose 三容器）部署到客户内网的
 > Windows Server 2022 物理机 —— 在 Hyper-V 里跑一台 Ubuntu 虚拟机，Docker 全栈装在虚拟机内。
 >
-> 对应 [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md) 里目标系统的 🥈 次选路线（🥇 首选是直接装 Ubuntu Server）。
+> 对应 [`archive/MIGRATION_PLAN.md`](archive/MIGRATION_PLAN.md) 里目标系统的 🥈 次选路线（🥇 首选是直接装 Ubuntu Server）。
 > 本文档只讲"怎么装、怎么起、怎么验、坏了怎么查"，不重复项目功能说明。
 
 > **已部署现场（2026-10-31）**：Windows 宿主 `192.168.250.1` · Ubuntu VM `192.168.250.2` ·
 > Hyper-V NAT 网络 · 项目入口 `http://192.168.250.2:8888`。实测参数见 9.4 节。
 
-**文档版本**：2026-10-31 · 对应代码 v3.0
+**文档版本**：2026-10-31 初稿（v3.0）｜**2026-11-20 修订**：v3.1 起改用**离线镜像包 + `update.sh`** 更新（不再现场 `--build`），见根目录 `README.md`「内网生产更新流程」；OCR 已改走官方接入 `https://39.173.23.40:18082/v1`（HTTPS + 私有 CA），本文 12.x 的 OCR 排错章节仅适用于旧接入
 
 ---
 

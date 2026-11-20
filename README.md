@@ -49,11 +49,10 @@ pig-counter/                       # 仓库根 = 部署根
 |:--|:--|
 | `README.md`（本文件） | 项目概览、本地开发、Docker 部署、远程发版流程、API 端点、关键配置 |
 | `docs/PROJECT_OVERVIEW.md` | 技术栈、目录结构、业务逻辑总览、已知问题 |
-| `docs/MIGRATION_PLAN.md` | **迁移到客户内网新服务器的方案、盘点与待决策项** |
 | `docs/DEPLOY_HYPERV_UBUNTU.md` | **Windows Server 2022 + Hyper-V + Ubuntu 虚拟机部署教程（含搬数据、验收、排错、运维）** |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
 | `docs/EXECUTIVE_SUMMARY.md` / `docs/USER_JOURNEY.md` | 面向管理层的功能概览、用户旅程图 |
-| `docs/refs/` | OCR 选型历史研究（**已废弃方案存档**，不代表当前实现） |
+| `docs/archive/` | **历史存档（不再维护）**：迁移方案 `MIGRATION_PLAN.md`、OCR 选型旧研究 `refs/` |
 | `AGENTS.md` | AI 编码助手行为规范 |
 
 ## 本地开发
