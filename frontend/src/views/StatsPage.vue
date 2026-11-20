@@ -20,12 +20,12 @@
         <div class="last-update" v-if="lastUpdateTime">
           更新于 {{ lastUpdateTime }}
         </div>
-        <button class="refresh-btn" @click="loadAll" :disabled="loading || isAnalyzing" :title="isAnalyzing ? '批量识别进行中，结束后自动刷新' : '刷新数据'">
+        <button class="refresh-btn" @click="loadAll" :disabled="loading" :title="isAnalyzing ? '识别进行中，数据会随每张图片完成而增长' : '刷新数据'">
           <svg :class="{ spinning: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
             <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
           </svg>
-          <span>{{ isAnalyzing ? '识别中…' : (loading ? '加载中…' : '刷新数据') }}</span>
+          <span>{{ loading ? '加载中…' : '刷新数据' }}</span>
         </button>
       </div>
     </div>
@@ -637,9 +637,10 @@ export default {
   },
 
   created() {
-    // 批量识别进行中不拉数据：后端推理占满事件循环，请求会挂住，
-    // 页面会长时间停在 0 / 空状态。等识别结束后由 watch isAnalyzing 统一刷新。
-    if (!this.isAnalyzing) this.loadAll()
+    // 识别中也照常拉数据：推理已搬到线程池（77eba9b6），统计接口不再被阻塞，
+    // 实测识别期间 20ms 内返回。此前"识别中不拉"会让首次进入统计页的显示停在 0。
+    this.loadAll()
+    if (this.isAnalyzing) this._startPolling()
   },
 
   mounted() {
@@ -653,6 +654,7 @@ export default {
   },
 
   beforeUnmount() {
+    this._stopPolling()
     document.removeEventListener('click', this._closeDropdown)
     if (this._chartMouseListeners) {
       this._chartMouseListeners.forEach(({ el, event, fn }) => el.removeEventListener(event, fn))
@@ -666,9 +668,15 @@ export default {
   },
 
   watch: {
-    // 批量识别结束→刷新一次，数据此时才包含新记录
+    // 识别中：每 5 秒刷新一次，数字随完成的图片增长；识别结束：停轮询并收尾刷新一次
     isAnalyzing(val) {
-      if (!val) this.loadAll()
+      if (val) {
+        this._startPolling()
+        this.loadAll(false)
+      } else {
+        this._stopPolling()
+        this.loadAll()
+      }
     },
     // 监听时间序列数据变化，自动更新图表
     timeSeriesData: {
@@ -681,10 +689,22 @@ export default {
   },
 
   methods: {
-    async loadAll() {
-      if (this.isAnalyzing) return
+    /** 识别进行中：每 5 秒拉一次，页面数字随完成的图片增长 */
+    _startPolling() {
+      this._stopPolling()
+      // 轮询只拉轻量接口（统计/趋势），不拉画廊缩略图——那是几百 KB 的 base64
+      this._pollTimer = setInterval(() => { if (!this.loading) this.loadAll(false) }, 5000)
+    },
+
+    _stopPolling() {
+      if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null }
+    },
+
+    async loadAll(includeGallery = true) {
       this.loading = true
-      await Promise.all([this.loadGlobalStats(), this.loadFarmStats(), this.loadGallery(), this.loadTimeSeriesData()])
+      const tasks = [this.loadGlobalStats(), this.loadFarmStats(), this.loadTimeSeriesData()]
+      if (includeGallery) tasks.push(this.loadGallery())
+      await Promise.all(tasks)
       this.lastUpdateTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       this._syncCache()
       this.loading = false
