@@ -163,9 +163,14 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/
 1. `dist/` 是 bind mount，更新时必须**拷进原目录**（`cp -a 新/. 旧/`）——`rm -rf` 后重建目录会让运行中的 nginx 指向已删除的 inode。
 2. 重建 backend 容器后**必须 `docker restart pig-count-nginx`**——否则 nginx 缓存旧容器 IP，表现为“首页能开、接口全 502”。
 
-> 内网 OCR 指向本地模型（`docker-compose.yml` 里 `OCR_BASE_URL` / `OCR_MODEL`，**不是** `.env`）：
-> `OCR_BASE_URL=http://39.173.23.40:18081/v1`、`OCR_MODEL=qwen3.8-27b`、`OCR_API_KEY=EMPTY`（必须非空）。
-> 端口不通时单张识别会卡约 10 分钟，见 `docs/KNOWN_ISSUES.md`。
+> **内网 OCR 走官方 Qwen OCR 接入**（2026-11-20 起）：
+> `OCR_BASE_URL=https://39.173.23.40:18082/v1`（**HTTPS / 18082**）、`OCR_MODEL=qwen3.8-27b`、
+> `OCR_CA_FILE=/app/qwen-ocr-ca.pem`（私有 CA）、`OCR_API_KEY` 写在 **`.env`**（compose 里只留 `${OCR_API_KEY:-}`）。
+> 前置条件：`certs/qwen-ocr-ca.pem` 存在，且 backend 服务挂载了该 CA 与 `watermark_ocr.py`。
+>
+> 两个坑：① `18081` 是**纯文本**入口，带图必返 `At most 0 image(s)`（400）；
+> ② 模型是推理模型，请求里不带 `chat_template_kwargs:{"enable_thinking":false}` 时 `content` 恒为 `null`，
+> 表现为“不报错但读不出水印”。详见 `docs/KNOWN_ISSUES.md`。
 
 > `git fetch` 偶尔会因为服务器到 GitHub 的 HTTPS 连接超时报错（实测出现过连续两次失败），重试即可。若持续不通，可在本地打 `git bundle` 后用 scp 传上去再 `git fetch <bundle>`。
 
