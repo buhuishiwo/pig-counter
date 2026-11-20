@@ -1,12 +1,17 @@
 """
-watermark_ocr.py — 水印识别模块（qwen-vl-ocr）
+watermark_ocr.py — 水印识别模块（Qwen OCR 官方接入）
 
-设计依据（实测）：
-  qwen-vl-ocr 用"让模型自己抽字段的 JSON prompt"时，对排版稍有变化的图片会把
-  日期当栏舍号、把 GPS 当栋舍（试过 4 种 prompt 都一样）。但让它**原样逐行输出文字**
-  时，每行都是准确的，因此改为：
-      原样输出文字  →  本地按"标签"抽取字段（与行的顺序无关）
-  抽取不到时，再退回结构化 prompt 兜底。
+设计（2026-11-21 起）：
+  一次请求返回结构化 JSON，不再做"原样输出 + 多轮定向补问"。
+    - 单张耗时从 ~14.6s 降到 ~3s（模型是单实例，调用次数直接决定耗时）
+    - 批量并发固定为 1（官方示例客户端即串行；并发只会排队并把单张拖到超时）
+
+  失败策略：请求失败 / 返回非 JSON → 重试 1 次 → 仍失败则本图水印记 None，主流程继续。
+
+  历史经验仍保留：
+    - 数字必须阿拉伯数字：提示词里显式要求；模型不听话时 _cn_to_arabic 兜底
+    - 栋舍/地点/承储单位可能被误填 GPS、日期、打卡信息 → _BAD_VALUE 过滤
+    - 栏舍号拆分单元/栏号 → _parse_pen_label
 
 输出字段与历史版本完全一致（DB / 前端 / Excel 均不受影响）：
   time, location, building, unit_name, pen_number, count, storage_unit, raw_text
@@ -26,52 +31,78 @@ load_dotenv()
 OCR_API_KEY = os.getenv("OCR_API_KEY", "")
 OCR_BASE_URL = os.getenv("OCR_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 OCR_MODEL = os.getenv("OCR_MODEL", "qwen-vl-ocr")
+OCR_CA_FILE = os.getenv("OCR_CA_FILE", "")  # 私有 CA 证书路径（不填则用默认信任链）
 
-_TEXT_PROMPT = (
-    "请把图片左下角水印区域内的所有文字原样逐行识别出来。"
-    "不要解释、不要输出 JSON、不要改写或合并文字，不要遗漏任何一行。"
+# 单张总超时（秒）。正常约 3 秒，留足余量但不至于把整批拖死。
+OCR_IMAGE_TIMEOUT = float(os.getenv("OCR_IMAGE_TIMEOUT", "180"))
+# 单次请求最大输出。12 字段 JSON + 其他可见文字，768 足够。
+OCR_MAX_TOKENS = int(os.getenv("OCR_MAX_TOKENS", "768"))
+
+_PROMPT_JSON = (
+    "逐字读取这张照片中的水印和文字。返回一个 JSON 对象，键为：栋舍、栏舍号、头数、打卡时间、"
+    "地点原文、纬度、经度、日期、星期、存储单位、防伪码、其他可见文字。每个值为字符串。"
+    "看不清、缺失、不能确认的字段填 null，不要猜。头数只抄水印标注，保留单位，不要数动物。"
+    "地点原文请合并换行；分别抄录地点原文和存储单位，两处名称可能不同。"
+    "经纬度保留每位小数、度数符号及方向，日期保留原格式。防伪码逐个核对字符。"
+    "标志、认证标语等其余能看清的文字按行放在其他可见文字里。仅输出 JSON。"
+    "数字一律写成阿拉伯数字（如「一单元十栏」→「1单元10栏」、「三十六」→「36」）。"
 )
 
-# 兜底：结构化抽取
-_PROMPT = (
-    "请识别图片左下角的水印文字，提取以下字段并以JSON格式返回：\n"
-    "- time: 拍摄时间\n"
-    "- location: 地点\n"
-    "- building: 所在栋舍（如\"育肥一区7楼\"）\n"
-    "- pen_label: 栏舍号（完整原文，如\"14单元20号栏\"或\"1单元10栏\"）\n"
-    "- count: 数量/头数（仅数字）\n"
-    "- storage_unit: 承储单位\n"
-    "如果某个字段无法识别，返回空字符串。只返回JSON，不要其他文字。"
-)
-
-# 行首坐标前缀（qwen-vl-ocr 原样输出时会带）："192,804,31,305,90,"
-_COORD_PREFIX = re.compile(r'^\s*\d+(?:\s*,\s*\d+){3,5}\s*,?\s*')
-
-# 各字段的"标签别名"——不同猪场标签写法不同，但维度相同
-_LABELS = {
-    "building": r'栋舍|猪舍|栋号',
-    "pen": r'栏舍号|栏号|圈舍号|栏位号|栏位',
-    "count": r'头数|数量|存栏|实存',
-    "time": r'时\s*间',
-    "location": r'地\s*点',
-    "storage_unit": r'承储单位|养殖场名称|养殖单位',
+# 模型返回的键名 → 我们的字段（同一字段可能换写法，按顺序取第一个非空）
+_FIELD_ALIASES = {
+    "building": ("栋舍", "所在栋舍", "猪舍", "栋号"),
+    "pen": ("栏舍号", "栏号", "圈舍号", "栏位号", "栏位"),
+    "count": ("头数", "数量", "存栏", "实存"),
+    "time": ("打卡时间", "时间"),
+    "date": ("日期",),
+    "location": ("地点原文", "地点"),
+    "storage_unit": ("存储单位", "承储单位", "养殖场名称", "养殖单位"),
 }
 
-# 模型偶尔把 GPS / 日期 / 打卡信息误填进"所在栋舍"
-_BAD_VALUE = (
+# 模型偶尔把 GPS / 日期 / 打卡信息塞进"栋舍"之类的字段
+_BAD_GPS_OR_MARK = (
     re.compile(r'^\s*\d{1,3}\.\d+\s*°?\s*[NS]', re.I),                          # 28.201845°N
-    re.compile(r'^\s*\d{4}\s*[.\-/]\s*\d{1,2}\s*[.\-/]\s*\d{1,2}'),             # 2026.11.16
     re.compile(r'星期|打卡|今日水印|请输入内容'),
 )
+_BAD_VALUE = _BAD_GPS_OR_MARK + (
+    re.compile(r'^\s*\d{4}\s*[.\-/]\s*\d{1,2}\s*[.\-/]\s*\d{1,2}'),             # 2026.11.16
+)
 
-# 整段原样输出失败时（模型只回坐标），对缺失字段逐个"定向提问"。
-# 实测：问法必须是"读出「某标签」后面的文字"，加上冒号/强调不要输出其他内容反而会失败。
-_ASK = {
-    "building": '请读出图片左下角水印中「所在栋舍」后面的文字，只输出那几个字。',
-    "pen": '请读出图片左下角水印中「栏舍号」后面的文字，只输出那几个字。',
-    "count": '请读出图片左下角水印中「头数」或「数量」后面的数字，只输出数字。',
-    "storage_unit": '请读出图片左下角水印中「承储单位」或「养殖场名称」后面的文字，只输出那几个字。',
-}
+# ── 中文数字 → 阿拉伯数字 ──────────────────────────────
+# 水印偶尔写成「一单元十栏」「头数：三十六」，而下游解析/比对都是阿拉伯数字。
+# 提示词已要求模型输出阿拉伯数字，这段是模型不听话时的兜底。
+_CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+             "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_UNIT = {"十": 10, "百": 100, "千": 1000}
+_CN_SEQ = re.compile(r"[零〇一二三四五六七八九十二百千两]+|[零〇一二三四五六七八九]+")
+
+
+def _cn2int(s: str) -> int | None:
+    """'十'→10 '十二'→12 '二十'→20 '一百二十'→120 '三六'→36；失败返回 None。"""
+    if not s:
+        return None
+    if any(c in _CN_UNIT for c in s):
+        total = cur = 0
+        for c in s:
+            if c in _CN_DIGIT:
+                cur = _CN_DIGIT[c]
+            elif c in _CN_UNIT:
+                total += (cur or 1) * _CN_UNIT[c]
+                cur = 0
+            else:
+                return None
+        return total + cur
+    if all(c in _CN_DIGIT for c in s):
+        return int("".join(str(_CN_DIGIT[c]) for c in s))
+    return None
+
+
+def _cn_to_arabic(text: str) -> str:
+    def repl(m):
+        v = _cn2int(m.group())
+        return str(v) if v is not None else m.group()
+    return _CN_SEQ.sub(repl, text)
+
 
 _EMPTY = {
     "time": "", "location": "", "building": "",
@@ -81,7 +112,9 @@ _EMPTY = {
 
 
 def _parse_count(raw) -> int | None:
-    m = re.search(r'\d+', str(raw))
+    if raw is None:
+        return None
+    m = re.search(r'\d+', _cn_to_arabic(str(raw)))
     return int(m.group()) if m else None
 
 
@@ -91,8 +124,9 @@ def _parse_pen_label(raw: str) -> tuple[str, str]:
     '14单元20号栏' → ('14单元', '20')
     '1单元10栏'    → ('1单元', '10')
     '13栋35栏'     → ('', '35')
+    '一单元十栏'   → ('1单元', '10')
     """
-    s = str(raw).strip()
+    s = _cn_to_arabic(str(raw or "")).strip()
     unit_m = re.search(r'(\d+)\s*单元', s)
     pen_m = re.search(r'(\d+)\s*[栏号]', s)
     unit = f"{unit_m.group(1)}单元" if unit_m else ""
@@ -105,172 +139,171 @@ parse_unit_pen = _parse_pen_label
 
 
 def _clean_value(v) -> str:
-    v = str(v or '').strip(" :：\t")
-    if not v:
-        return ''
+    """去空白与占位符；命中 GPS/日期/打卡等误填时丢弃。"""
+    if v is None:
+        return ""
+    v = str(v).strip(" :：\t\r\n")
+    if not v or v.lower() in ("null", "none", "nan", "-", "无"):
+        return ""
     for pat in _BAD_VALUE:
         if pat.search(v):
-            return ''
+            return ""
     return v
 
 
-def _clean_text(text: str) -> list[str]:
-    """去坐标前缀 / markdown 包装，返回逐行文字。"""
-    s = (text or '').strip()
-    if s.startswith("```"):
-        s = re.sub(r'^```(?:json|text)?\s*', '', s)
-        s = re.sub(r'\s*```$', '', s)
-    lines = []
-    for line in s.splitlines():
-        line = _COORD_PREFIX.sub('', line).strip()
-        if line:
-            lines.append(line)
-    return lines
+def _clean_time(v) -> str:
+    """时间字段：日期就是正常内容，只过滤 GPS / 打卡之类的噪声。"""
+    if v is None:
+        return ""
+    v = str(v).strip(" :：\t\r\n")
+    if not v or v.lower() in ("null", "none", "nan", "-", "无"):
+        return ""
+    for pat in _BAD_GPS_OR_MARK:
+        if pat.search(v):
+            return ""
+    return v
 
 
-def _grab(lines: list[str], label_pat: str) -> str:
-    """按"标签: 值"取值，与行的顺序无关。"""
-    pat = re.compile(rf'(?:{label_pat})\s*[:：]\s*(.+)$')
-    for line in lines:
-        m = pat.search(line)
-        if m:
-            v = _clean_value(m.group(1))
-            if v:
-                return v
+def _norm_key(k) -> str:
+    """键名规范化：去空格/冒号，便于匹配「所在栋舍 」「栋舍:」之类写法。"""
+    return re.sub(r'[\s:：*`"]', '', str(k))
+
+
+def _parse_json_reply(text: str) -> dict | None:
+    """把模型输出解析成 dict。容忍 markdown 围栏、前后多余文字。"""
+    if not text:
+        return None
+    s = text.strip()
+    s = re.sub(r'^```(?:json)?\s*', '', s)
+    s = re.sub(r'\s*```$', '', s).strip()
+
+    candidates = [s]
+    m = re.search(r'\{.*\}', s, re.S)          # 前后带解释文字时抠第一个对象
+    if m:
+        candidates.append(m.group(0))
+
+    for c in candidates:
+        try:
+            data = json.loads(c)
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            return {_norm_key(k): v for k, v in data.items()}
+    return None
+
+
+def _pick(data: dict, field: str) -> str:
+    for alias in _FIELD_ALIASES[field]:
+        v = data.get(_norm_key(alias))
+        if isinstance(v, (int, float)):
+            return str(v)
+        if isinstance(v, str) and v.strip():
+            return v
     return ""
 
 
-def parse_watermark_text(text: str) -> dict:
-    """水印原文 → 标准字段（与历史接口一致）。"""
-    lines = _clean_text(text)
-    out = dict(_EMPTY)
-    # 只保留纯文字（坐标前缀已剔除），坐标信息一律不留
-    out["raw_text"] = "\n".join(lines)
+def _to_fields(data: dict, raw_text: str) -> dict:
+    """JSON → 数据库字段（与历史输出结构一致）。"""
+    building = _clean_value(_pick(data, "building"))
+    location = _clean_value(_pick(data, "location"))
+    storage_unit = _clean_value(_pick(data, "storage_unit"))
+    unit_name, pen_number = _parse_pen_label(_pick(data, "pen"))
+    count = _parse_count(_pick(data, "count"))
+    when = _clean_time(_pick(data, "time")) or _clean_time(_pick(data, "date"))
 
-    out["building"] = _grab(lines, _LABELS["building"])
-    out["time"] = _grab(lines, _LABELS["time"])
-    out["location"] = _grab(lines, _LABELS["location"])
-    out["storage_unit"] = _grab(lines, _LABELS["storage_unit"])
-
-    unit_name, pen_number = _parse_pen_label(_grab(lines, _LABELS["pen"]))
-    out["unit_name"] = unit_name
-    out["pen_number"] = pen_number
-
-    count_raw = _grab(lines, _LABELS["count"])
-    if count_raw:
-        out["count"] = _parse_count(count_raw)
-    else:
-        m = re.search(r'(\d+)\s*头', "\n".join(lines))
-        out["count"] = int(m.group(1)) if m else None
-
-    if not out["time"]:
-        m = re.search(r'\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}(?:\s+\d{1,2}:\d{2})?', "\n".join(lines))
-        out["time"] = m.group() if m else ""
-
-    return out
+    return {
+        "time": when,
+        "location": location,
+        "building": building,
+        "unit_name": unit_name,
+        "pen_number": pen_number,
+        "count": count,
+        "storage_unit": storage_unit,
+        "raw_text": raw_text,
+    }
 
 
-async def _call_ocr(image_bytes: bytes, prompt: str, max_tokens: int = 800) -> str | None:
+async def _call_ocr(image_bytes: bytes, prompt: str) -> str | None:
+    """单次请求：一张图 + 提示词 → 模型文本输出。"""
     b64 = base64.b64encode(image_bytes).decode()
+    mime = "image/png" if image_bytes[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
     payload = {
         "model": OCR_MODEL,
         "messages": [{
             "role": "user",
             "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
                 {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
             ],
         }],
-        "max_tokens": max_tokens,
+        "temperature": 0,
+        "max_completion_tokens": OCR_MAX_TOKENS,
+        # 不关推理模式时，答案会全部落在 message.reasoning 里，content 为 null
+        "chat_template_kwargs": {"enable_thinking": False},
+        "stream": False,
     }
     headers = {"Authorization": f"Bearer {OCR_API_KEY}", "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0),
+        verify=OCR_CA_FILE or True,
+    ) as client:
         resp = await client.post(f"{OCR_BASE_URL}/chat/completions", json=payload, headers=headers)
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
+        choice = resp.json()["choices"][0]
+        if choice.get("finish_reason") == "length":
+            return None  # 被截断，宁可重试也不解析半截 JSON
+        content = choice["message"].get("content")
+        return content if content else None
 
 
-async def _ask_field(image_bytes: bytes, field: str) -> str:
-    """定向问单个字段：去掉回答里的"标签:"前缀，并丢弃无效值（坐标/日期/占位符）。"""
-    ans = (await _call_ocr(image_bytes, _ASK[field], max_tokens=64) or "").strip()
-    ans = re.sub(r'^[^:：\n]{0,10}[:：]\s*', '', ans).strip()
-    return _clean_value(ans)
-
-
-async def _recognize_structured(image_bytes: bytes) -> dict | None:
-    """兜底：让模型直接抽字段。"""
-    content = await _call_ocr(image_bytes, _PROMPT, max_tokens=512)
-    stripped = content.strip()
-    if stripped.startswith("```"):
-        stripped = re.sub(r'^```(?:json)?\s*', '', stripped)
-        stripped = re.sub(r'\s*```$', '', stripped)
-    data = json.loads(stripped)
-    unit_name, pen_number = _parse_pen_label(str(data.get("pen_label", "")))
-    return {
-        "time": _clean_value(data.get("time", "")),
-        "location": _clean_value(data.get("location", "")),
-        "building": _clean_value(data.get("building", "")),
-        "unit_name": unit_name,
-        "pen_number": pen_number,
-        "count": _parse_count(data.get("count", "")),
-        "storage_unit": _clean_value(data.get("storage_unit", "")),
-        "raw_text": json.dumps(data, ensure_ascii=False),
-    }
-
-
-async def recognize_watermark(image_bytes: bytes) -> dict | None:
-    """识别单张水印：原样输出 + 本地按标签抽取；缺字段定向补问；仍失败再走结构化兜底。"""
+async def _recognize_watermark_impl(image_bytes: bytes) -> dict | None:
+    """一次 JSON 调用；失败重试 1 次。"""
     if not OCR_API_KEY:
         return None
 
-    # 1) 原样输出 + 本地正则
-    parsed = dict(_EMPTY)
+    for attempt in (1, 2):
+        try:
+            content = await _call_ocr(image_bytes, _PROMPT_JSON)
+            if not content:
+                continue
+            data = _parse_json_reply(content)
+            if data:
+                fields = _to_fields(data, content)
+                # 一条有效信息都没有 → 当作失败（避免写全 NULL 的水印行）
+                if fields["pen_number"] or fields["count"] is not None or fields["building"]:
+                    return fields
+                print(f"[OCR] 第 {attempt} 次返回字段全空，重试")
+                continue
+            print(f"[OCR] 第 {attempt} 次返回的不是合法 JSON，前 80 字符: {content[:80]!r}")
+        except Exception as exc:
+            print(f"[OCR] 第 {attempt} 次请求失败: {exc}")
+    return None
+
+
+async def recognize_watermark(image_bytes: bytes) -> dict | None:
+    """单张水印识别入口：整张图最多 OCR_IMAGE_TIMEOUT 秒，失败返回 None。"""
     try:
-        text = await _call_ocr(image_bytes, _TEXT_PROMPT)
-        parsed = parse_watermark_text(text or "")
-    except Exception:
-        parsed = dict(_EMPTY)
-
-    # 2) 对缺失的关键字段定向补问（整段读不出文字时，模型对"问单个字段"仍能答对）
-    async def ask(field):
-        # 单次问法偶尔也会失手，最多问两次
-        for _ in range(2):
-            try:
-                ans = await _ask_field(image_bytes, field)
-            except Exception:
-                ans = ""
-            if ans:
-                return ans
-        return ""
-
-    if not parsed["pen_number"]:
-        u, p = _parse_pen_label(await ask("pen"))
-        if p:
-            parsed["pen_number"] = p
-            parsed["unit_name"] = parsed["unit_name"] or u
-    if not parsed["building"]:
-        parsed["building"] = await ask("building")
-    if not parsed["storage_unit"]:
-        parsed["storage_unit"] = await ask("storage_unit")
-    if parsed["count"] is None:
-        parsed["count"] = _parse_count(await ask("count"))
-
-    if parsed["pen_number"] or parsed["count"] is not None or parsed["building"]:
-        return parsed
-
-    # 3) 兜底：让模型直接抽字段
-    try:
-        return await _recognize_structured(image_bytes)
-    except Exception:
+        return await asyncio.wait_for(_recognize_watermark_impl(image_bytes), timeout=OCR_IMAGE_TIMEOUT)
+    except asyncio.TimeoutError:
+        print(f"[OCR] 单张识别超过 {OCR_IMAGE_TIMEOUT:.0f} 秒，已放弃（视为水印不可用）")
+        return None
+    except Exception as exc:  # noqa: BLE001 - OCR 失败不影响主流程
+        print(f"[OCR] 识别异常，已忽略: {exc}")
         return None
 
 
-async def recognize_watermarks_batch(images: list[bytes], concurrency: int = 5) -> list[dict | None]:
-    """批量识别水印，并发限制为 concurrency。"""
-    sem = asyncio.Semaphore(concurrency)
+async def recognize_watermarks_batch(images: list[bytes], concurrency: int = 1) -> list[dict | None]:
+    """批量识别水印。
+
+    默认串行（concurrency=1）：OCR 服务是单实例，并发请求只会在服务端排队，
+    反而把单张耗时拖过超时线（实测 5 并发时单张 >120 秒）。
+    """
+    sem = asyncio.Semaphore(max(1, concurrency))
 
     async def _limited(img_bytes: bytes) -> dict | None:
         async with sem:
             return await recognize_watermark(img_bytes)
 
+    if not images:
+        return []
     return await asyncio.gather(*[_limited(img) for img in images])
