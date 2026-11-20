@@ -62,8 +62,10 @@ _FIELD_ALIASES = {
 }
 
 # 模型偶尔把 GPS / 日期 / 打卡信息塞进"栋舍"之类的字段
-_BAD_GPS_OR_MARK = (
+_BAD_GPS = (
     re.compile(r'^\s*\d{1,3}\.\d+\s*°?\s*[NS]', re.I),                          # 28.201845°N
+)
+_BAD_GPS_OR_MARK = _BAD_GPS + (
     re.compile(r'星期|打卡|今日水印|请输入内容'),
 )
 _BAD_VALUE = _BAD_GPS_OR_MARK + (
@@ -147,13 +149,13 @@ def _clean_value(v) -> str:
 
 
 def _clean_time(v) -> str:
-    """时间字段：日期就是正常内容，只过滤 GPS / 打卡之类的噪声。"""
+    """时间字段：日期、星期就是正常内容，只过滤 GPS 坐标。"""
     if v is None:
         return ""
     v = str(v).strip(" :：\t\r\n")
     if not v or v.lower() in ("null", "none", "nan", "-", "无"):
         return ""
-    for pat in _BAD_GPS_OR_MARK:
+    for pat in _BAD_GPS:
         if pat.search(v):
             return ""
     return v
