@@ -1861,23 +1861,25 @@ def _build_batch_excel(
     from openpyxl import load_workbook
     from openpyxl.drawing.image import Image as XlImage
     from openpyxl.styles import Border, Side, Font, Alignment, PatternFill
+    from openpyxl.utils import get_column_letter
     from copy import copy
     import re
+
+    # 模板结构: Row1=标题, Row2=表头, Rows3-10=数据, Row11=汇总
+    DATA_START = 3
+    TEMPLATE_DATA_END = 10
+    SUMMARY_ORIG = 11
+    # 14 列：…K 单元总数 | L 备注 | M 储备期限 | N 储备数量（后两列为留空手填）
+    MAX_COL = 14
 
     template_path = Path(__file__).parent / "excel_template_v2.xlsx"
     wb = load_workbook(str(template_path))
     ws = wb.active
 
-    # 模板结构: Row1=标题, Row2=表头, Rows3-10=数据, Row11=汇总
     for mg in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(mg))
     ws.cell(row=1, column=1, value="活体生猪盘点一览表")
-    ws.merge_cells('A1:L1')
-
-    DATA_START = 3
-    TEMPLATE_DATA_END = 10
-    SUMMARY_ORIG = 11
-    MAX_COL = 12
+    ws.merge_cells(f'A1:{get_column_letter(MAX_COL)}1')
 
     for r in range(DATA_START, SUMMARY_ORIG + 1):
         for c in range(1, MAX_COL + 1):
@@ -2012,7 +2014,7 @@ def _build_batch_excel(
         from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
         from openpyxl.drawing.xdr import XDRPositiveSize2D
         from openpyxl.utils.units import pixels_to_EMU
-        from openpyxl.utils import column_index_from_string
+        from openpyxl.utils import column_index_from_string, get_column_letter
         col_idx = column_index_from_string(cell_ref[0]) - 1
         row_idx = int(cell_ref[1:]) - 1
         col_width_px = int(col_width_chars * 7.5)
