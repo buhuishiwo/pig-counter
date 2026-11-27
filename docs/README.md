@@ -15,6 +15,7 @@
 | [`EXECUTIVE_SUMMARY.md`](EXECUTIVE_SUMMARY.md) | 一页纸功能概览（面向管理层汇报） | 功能范围变化时 |
 | [`USER_JOURNEY.md`](USER_JOURNEY.md) | 用户旅程图 & 泳道图 | 业务流程变化时 |
 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | 功能层已知限制（OCR 识别边界等） | 发现/解决限制时 |
+| [`SOFTWARE_ENV_SPEC.md`](SOFTWARE_ENV_SPEC.md) | **软件环境与配置说明**（开发/运行硬件、操作系统、支撑软件、语言版本、代码行数）——交付验收用 | 环境或版本变化时 |
 | [`archive/`](archive/) | **历史存档（不再维护）**：`MIGRATION_PLAN.md`（迁移已执行完成）、`refs/`（OCR 选型已废弃方案） | 不再更新 |
 
 ---
