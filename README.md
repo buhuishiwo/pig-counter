@@ -51,7 +51,6 @@ pig-counter/                       # 仓库根 = 部署根
 | `docs/PROJECT_OVERVIEW.md` | 技术栈、目录结构、业务逻辑总览、已知问题 |
 | `docs/DEPLOY_HYPERV_UBUNTU.md` | **Windows Server 2022 + Hyper-V + Ubuntu 虚拟机部署教程（含搬数据、验收、排错、运维）** |
 | `docs/KNOWN_ISSUES.md` | 功能层已知限制（OCR 识别边界等） |
-| `docs/SOFTWARE_ENV_SPEC.md` | 软件环境与配置说明（硬件/OS/支撑软件/语言版本/代码行数，交付验收用） |
 | `docs/EXECUTIVE_SUMMARY.md` / `docs/USER_JOURNEY.md` | 面向管理层的功能概览、用户旅程图 |
 | `docs/archive/` | **历史存档（不再维护）**：迁移方案 `MIGRATION_PLAN.md`、OCR 选型旧研究 `refs/` |
 | `AGENTS.md` | AI 编码助手行为规范 |
